@@ -45,7 +45,7 @@ The analyzer provides comprehensive analysis across 9 different tabs:
 1. Navigate to the project directory
 2. Run the Streamlit application:
    ```bash
-   streamlit run repo_analyzer/main.py
+   streamlit run codebase_analyzer/main.py
    ```
 
 3. Open your browser to `http://localhost:8501`
@@ -141,3 +141,4 @@ This project is for internal Thomson Reuters use.
 ## Support
 
 For issues or questions, please contact the development team.
+
