@@ -20,10 +20,10 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import analysis modules
-from analyzers.expertise_mapping import ExpertiseMapper
+from analyzers.commit_mapping import ExpertiseMapper
 from analyzers.timeline_analysis import TimelineAnalyzer
-from analyzers.api_contracts import APIContractAnalyzer
-from analyzers.ai_context import AIContextAnalyzer
+from analyzers.api_analysis import APIContractAnalyzer
+from analyzers.ai_integration_analysis import AIContextAnalyzer
 from analyzers.risk_analysis import RiskAnalysisAnalyzer
 from utils.ai_client import OpenArenaClient
 
@@ -1026,3 +1026,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
