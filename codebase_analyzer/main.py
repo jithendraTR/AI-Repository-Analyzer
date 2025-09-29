@@ -327,32 +327,99 @@ def main():
         layout="wide"
     )
     
+    # Initialize sidebar state
+    if 'sidebar_collapsed' not in st.session_state:
+        st.session_state.sidebar_collapsed = False
+    
     # Hide Streamlit's default deploy button and menu
-    hide_streamlit_style = """
+    hide_streamlit_style = f"""
     <style>
-    #MainMenu {visibility: hidden;}
-    .stDeployButton {display:none !important;}
-    .stActionButton {display:none !important;}
-    [data-testid="stToolbar"] {display: none !important;}
-    [data-testid="stDecoration"] {display: none !important;}
-    [data-testid="stStatusWidget"] {display: none !important;}
-    .stApp > header {display: none !important;}
-    .stApp > .main .block-container {padding-top: 2rem !important;}
-    footer {visibility: hidden !important;}
-    #stDecoration {display:none !important;}
-    button[title="Deploy this app"] {display: none !important;}
-    .css-1rs6os {display: none !important;}
-    .css-17eq0hr {display: none !important;}
+    #MainMenu {{visibility: hidden;}}
+    .stDeployButton {{display:none !important;}}
+    .stActionButton {{display:none !important;}}
+    [data-testid="stToolbar"] {{display: none !important;}}
+    [data-testid="stDecoration"] {{display: none !important;}}
+    [data-testid="stStatusWidget"] {{display: none !important;}}
+    .stApp > header {{display: none !important;}}
+    .stApp > .main .block-container {{padding-top: 2rem !important;}}
+    footer {{visibility: hidden !important;}}
+    #stDecoration {{display:none !important;}}
+    button[title="Deploy this app"] {{display: none !important;}}
+    .css-1rs6os {{display: none !important;}}
+    .css-17eq0hr {{display: none !important;}}
+    
+    /* Hide Streamlit's default sidebar collapse button and other unwanted elements */
+    [data-testid="stSidebarCollapseButton"] {{display: none !important;}}
+    [data-testid="stBaseButton-headerNoPadding"] {{display: none !important;}}
+    button[kind="headerNoPadding"] {{display: none !important;}}
+    [data-testid="stLogoSpacer"] {{display: none !important;}}
+    
+    /* Hide sidebar when collapsed */
+    {'section[data-testid="stSidebar"] { display: none !important; }' if st.session_state.sidebar_collapsed else ''}
+    
+    /* Adjust main content when sidebar is collapsed */
+    {'div[data-testid="stAppViewContainer"] .main .block-container { margin-left: 0 !important; max-width: none !important; }' if st.session_state.sidebar_collapsed else ''}
+    
+    /* Custom toggle button styling */
+    .sidebar-toggle {{
+        position: fixed;
+        top: 1rem;
+        left: {'0.5rem' if st.session_state.sidebar_collapsed else '21rem'};
+        z-index: 999999;
+        transition: left 0.3s ease;
+    }}
+    
+    .sidebar-toggle .stButton > button {{
+        background: #262730 !important;
+        color: white !important;
+        border: 1px solid #464853 !important;
+        border-radius: 0.25rem !important;
+        padding: 0.25rem 0.5rem !important;
+        font-size: 16px !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+        transition: all 0.3s ease !important;
+        min-height: auto !important;
+        height: 2rem !important;
+    }}
+    
+    .sidebar-toggle .stButton > button:hover {{
+        background: #464853 !important;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2) !important;
+        transform: translateY(-1px) !important;
+    }}
+    
+    .sidebar-toggle .stButton > button:active {{
+        transform: translateY(0px) !important;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.1) !important;
+    }}
     </style>
     """
     st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+    
+    # Create sidebar toggle button when sidebar is collapsed (floating)
+    if st.session_state.sidebar_collapsed:
+        toggle_container = st.container()
+        with toggle_container:
+            st.markdown('<div class="sidebar-toggle">', unsafe_allow_html=True)
+            if st.button("►", key="open_sidebar", help="Open Sidebar"):
+                st.session_state.sidebar_collapsed = False
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
     
     st.title("🔍 AI-Powered Codebase Analyzer")
     st.markdown("Accelerate codebase onboarding and architectural discovery")
     
     # Sidebar for repository selection
     with st.sidebar:
-        st.header("Repository Configuration")
+        # Add close sidebar button at the top
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.header("Repository Configuration")
+        with col2:
+            if st.button("◄", key="close_sidebar_internal", help="Close Sidebar", use_container_width=False):
+                st.session_state.sidebar_collapsed = True
+                st.rerun()
+        
         repo_path = st.text_input("Repository Path", placeholder="/path/to/your/repo")
         
         # Auto-validate repository path without button
@@ -613,9 +680,51 @@ def main():
                     else:
                         st.error(f"❌ {analyzer_name.replace('_', ' ').title()}: {result.get('error', 'Unknown error')}")
                 
-                if st.button("🗑️ Clear Results", key="clear_results"):
-                    del st.session_state.analysis_results
-                    st.rerun()
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("🗑️ Clear Results", key="clear_results"):
+                        # Store results for potential restoration before clearing
+                        st.session_state.last_cleared_results = st.session_state.analysis_results.copy()
+                        st.session_state.results_cleared_timestamp = time.time()
+                        del st.session_state.analysis_results
+                        st.success("Results cleared! Use 'Reopen Results' to restore.")
+                        st.rerun()
+                with col2:
+                    if st.button("◄ Close Sidebar", key="collapse_sidebar_from_results"):
+                        st.session_state.sidebar_collapsed = True
+                        st.rerun()
+            
+            # Show reopen button if results were recently cleared
+            elif 'last_cleared_results' in st.session_state:
+                st.markdown("---")
+                st.subheader("🔄 Restore Results")
+                
+                # Show when results were cleared
+                if 'results_cleared_timestamp' in st.session_state:
+                    cleared_time = time.time() - st.session_state.results_cleared_timestamp
+                    if cleared_time < 60:
+                        st.info(f"Results cleared {int(cleared_time)} seconds ago")
+                    else:
+                        st.info(f"Results cleared {int(cleared_time/60)} minutes ago")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("🔄 Reopen Results", key="reopen_results"):
+                        # Restore the cleared results
+                        st.session_state.analysis_results = st.session_state.last_cleared_results.copy()
+                        del st.session_state.last_cleared_results
+                        if 'results_cleared_timestamp' in st.session_state:
+                            del st.session_state.results_cleared_timestamp
+                        st.success("Results restored!")
+                        st.rerun()
+                with col2:
+                    if st.button("🗑️ Permanently Delete", key="permanent_delete"):
+                        del st.session_state.last_cleared_results
+                        if 'results_cleared_timestamp' in st.session_state:
+                            del st.session_state.results_cleared_timestamp
+                        st.success("Results permanently deleted.")
+                        st.rerun()
+            
         
         # Legacy AI Analysis Section (kept for backward compatibility but hidden)
         if False and 'repo_path' in st.session_state:
@@ -1026,4 +1135,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
