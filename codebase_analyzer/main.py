@@ -5,15 +5,29 @@ Main application entry point with tabbed interface for different analysis types
 
 import streamlit as st
 import os
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 import asyncio
 import concurrent.futures
 from typing import Dict, Any
 import threading
 import time
+import json
+import io
+from datetime import datetime
 
-# Load environment variables
-load_dotenv()
+# Document generation imports
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib import colors
+from docx import Document
+from docx.shared import Inches
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+import markdown
+
+# Load environment variables from parent directory
+load_dotenv(find_dotenv())
 
 # Add parent directory to path for imports
 import sys
@@ -320,6 +334,146 @@ class ParallelAIAnalyzer:
         print(f"DEBUG: Parallel analysis completed. Results: {len(results)} analyzers")
         return results
 
+def generate_pdf_report(analysis_results: Dict[str, Any], repo_path: str) -> io.BytesIO:
+    """Generate a PDF report from analysis results"""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=18)
+    
+    # Get sample style sheet
+    styles = getSampleStyleSheet()
+    story = []
+    
+    # Title
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        spaceAfter=30,
+        alignment=1  # Center alignment
+    )
+    story.append(Paragraph("AI Codebase Analysis Report", title_style))
+    story.append(Spacer(1, 12))
+    
+    # Repository info
+    info_style = styles['Normal']
+    story.append(Paragraph(f"<b>Repository:</b> {repo_path}", info_style))
+    story.append(Paragraph(f"<b>Generated:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", info_style))
+    story.append(Spacer(1, 20))
+    
+    # Analysis sections
+    section_style = ParagraphStyle(
+        'SectionTitle',
+        parent=styles['Heading2'],
+        fontSize=16,
+        spaceAfter=12,
+        textColor=colors.darkblue
+    )
+    
+    analysis_names = {
+        'expertise': 'Team Expertise & Commit Mapping',
+        'timeline': 'Timeline Analysis',
+        'api_contracts': 'API Analysis',
+        'ai_context': 'AI Integration Analysis',
+        'risk_analysis': 'Risk Analysis'
+    }
+    
+    for analyzer_key, result in analysis_results.items():
+        if result.get('success', False):
+            # Section title
+            section_name = analysis_names.get(analyzer_key, analyzer_key.replace('_', ' ').title())
+            story.append(Paragraph(section_name, section_style))
+            
+            # AI Insights
+            insight_text = result.get('insight', 'No insights available')
+            # Clean up text for PDF
+            insight_text = insight_text.replace('**', '<b>').replace('**', '</b>')
+            insight_text = insight_text.replace('*', '<i>').replace('*', '</i>')
+            
+            # Split into paragraphs
+            paragraphs = insight_text.split('\n\n')
+            for para in paragraphs:
+                if para.strip():
+                    story.append(Paragraph(para.strip(), info_style))
+                    story.append(Spacer(1, 6))
+            
+            story.append(Spacer(1, 12))
+        else:
+            # Error section
+            section_name = analysis_names.get(analyzer_key, analyzer_key.replace('_', ' ').title())
+            story.append(Paragraph(f"{section_name} - Error", section_style))
+            error_text = result.get('error', 'Unknown error occurred')
+            story.append(Paragraph(f"Error: {error_text}", info_style))
+            story.append(Spacer(1, 12))
+    
+    # Build PDF
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+def generate_docx_report(analysis_results: Dict[str, Any], repo_path: str) -> io.BytesIO:
+    """Generate a DOCX report from analysis results"""
+    doc = Document()
+    
+    # Title
+    title = doc.add_heading('AI Codebase Analysis Report', 0)
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    
+    # Repository info
+    doc.add_paragraph(f"Repository: {repo_path}")
+    doc.add_paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    doc.add_paragraph()  # Empty paragraph for spacing
+    
+    analysis_names = {
+        'expertise': 'Team Expertise & Commit Mapping',
+        'timeline': 'Timeline Analysis', 
+        'api_contracts': 'API Analysis',
+        'ai_context': 'AI Integration Analysis',
+        'risk_analysis': 'Risk Analysis'
+    }
+    
+    for analyzer_key, result in analysis_results.items():
+        if result.get('success', False):
+            # Section title
+            section_name = analysis_names.get(analyzer_key, analyzer_key.replace('_', ' ').title())
+            doc.add_heading(section_name, level=1)
+            
+            # AI Insights
+            insight_text = result.get('insight', 'No insights available')
+            
+            # Split into paragraphs and add to document
+            paragraphs = insight_text.split('\n\n')
+            for para in paragraphs:
+                if para.strip():
+                    # Handle basic markdown formatting
+                    para_text = para.strip()
+                    if para_text.startswith('**') and para_text.endswith('**'):
+                        # Bold paragraph
+                        p = doc.add_paragraph()
+                        run = p.add_run(para_text[2:-2])
+                        run.bold = True
+                    elif para_text.startswith('*') and para_text.endswith('*'):
+                        # Italic paragraph
+                        p = doc.add_paragraph()
+                        run = p.add_run(para_text[1:-1])
+                        run.italic = True
+                    else:
+                        doc.add_paragraph(para_text)
+            
+            doc.add_paragraph()  # Add spacing after section
+        else:
+            # Error section
+            section_name = analysis_names.get(analyzer_key, analyzer_key.replace('_', ' ').title())
+            doc.add_heading(f"{section_name} - Error", level=1)
+            error_text = result.get('error', 'Unknown error occurred')
+            doc.add_paragraph(f"Error: {error_text}")
+            doc.add_paragraph()  # Add spacing after section
+    
+    # Save to buffer
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer
+
 def main():
     st.set_page_config(
         page_title="AI Codebase Analyzer",
@@ -485,6 +639,7 @@ def main():
         repo_path = st.text_input("Repository Path", placeholder="/path/to/your/repo")
         
         # Add line gap between input field and validation text
+        st.markdown("")
         st.markdown("")
         
         # Auto-validate repository path without button
@@ -1010,6 +1165,68 @@ def main():
         
         # Get selected analyses from session state
         selected_analyses = st.session_state.get('selected_analyses', [])
+        
+        # Show Save & Export Options when analysis results are available
+        if 'analysis_results' in st.session_state and selected_analyses:
+            results = st.session_state.analysis_results
+            successful_results = {k: v for k, v in results.items() if v.get('success', False)}
+            
+            if successful_results:
+                st.header("💾 Save & Export Options")
+                st.markdown("Download your analysis report in different formats")
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    # JSON Export
+                    json_data = {
+                        'repository': repo_path,
+                        'generated': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        'analysis_results': successful_results
+                    }
+                    json_str = json.dumps(json_data, indent=2, default=str)
+                    st.download_button(
+                        label="📄 Save as JSON",
+                        data=json_str,
+                        file_name=f"codebase_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                        mime="application/json",
+                        help="Download analysis results as JSON file"
+                    )
+                
+                with col2:
+                    # PDF Export
+                    try:
+                        pdf_buffer = generate_pdf_report(successful_results, repo_path)
+                        st.download_button(
+                            label="📄 Download PDF Report",
+                            data=pdf_buffer.getvalue(),
+                            file_name=f"codebase_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                            mime="application/pdf",
+                            help="Download comprehensive analysis report as PDF",
+                            type="primary"
+                        )
+                    except ImportError as e:
+                        st.error("PDF generation requires additional packages. Please install reportlab: `pip install reportlab`")
+                    except Exception as e:
+                        st.error(f"Error generating PDF: {str(e)}")
+                
+                with col3:
+                    # DOCX Export  
+                    try:
+                        docx_buffer = generate_docx_report(successful_results, repo_path)
+                        st.download_button(
+                            label="📄 Download DOCX Report",
+                            data=docx_buffer.getvalue(),
+                            file_name=f"codebase_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            help="Download comprehensive analysis report as Word document"
+                        )
+                    except ImportError as e:
+                        st.error("DOCX generation requires additional packages. Please install python-docx: `pip install python-docx`")
+                    except Exception as e:
+                        st.error(f"Error generating DOCX: {str(e)}")
+                
+                st.markdown("---")
         
         if selected_analyses:
             # Create tabs only for selected analyses
