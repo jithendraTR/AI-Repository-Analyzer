@@ -15,7 +15,28 @@ import pandas as pd
 from datetime import datetime
 import threading
 import time
+import io
 from utils.ai_client import OpenArenaClient
+
+# Document generation imports
+try:
+    from reportlab.lib.pagesizes import letter, A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+    from reportlab.lib import colors
+    PDF_AVAILABLE = True
+except ImportError:
+    PDF_AVAILABLE = False
+
+try:
+    from docx import Document
+    from docx.shared import Inches
+    from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
+    from docx.oxml.ns import qn
+    DOCX_AVAILABLE = True
+except ImportError:
+    DOCX_AVAILABLE = False
 
 class CancellationToken:
     """Thread-safe cancellation token for stopping long-running operations"""
@@ -545,7 +566,7 @@ class BaseAnalyzer(ABC):
         """
         st.subheader("💾 Save & Export Options")
         
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4, col5 = st.columns(5)
         
         with col1:
             # Save as JSON
@@ -594,6 +615,48 @@ class BaseAnalyzer(ABC):
                     mime="text/markdown",
                     key=f"download_full_{analysis_type}"
                 )
+        
+        with col4:
+            # Save as PDF
+            if PDF_AVAILABLE:
+                if st.button("📑 Save as PDF", key=f"save_pdf_{analysis_type}"):
+                    pdf_data = self._prepare_pdf_export(analysis_type, analysis_data)
+                    if pdf_data:
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        filename = f"{analysis_type}_report_{timestamp}.pdf"
+                        
+                        st.download_button(
+                            label="⬇️ Download PDF Report",
+                            data=pdf_data,
+                            file_name=filename,
+                            mime="application/pdf",
+                            key=f"download_pdf_{analysis_type}"
+                        )
+                    else:
+                        st.error("Failed to generate PDF report")
+            else:
+                st.info("📑 PDF export unavailable\n(install reportlab)")
+        
+        with col5:
+            # Save as DOCX (Word Document)
+            if DOCX_AVAILABLE:
+                if st.button("📝 Save as DOCX", key=f"save_docx_{analysis_type}"):
+                    docx_data = self._prepare_docx_export(analysis_type, analysis_data)
+                    if docx_data:
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        filename = f"{analysis_type}_report_{timestamp}.docx"
+                        
+                        st.download_button(
+                            label="⬇️ Download DOCX Report",
+                            data=docx_data,
+                            file_name=filename,
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            key=f"download_docx_{analysis_type}"
+                        )
+                    else:
+                        st.error("Failed to generate DOCX report")
+            else:
+                st.info("📝 DOCX export unavailable\n(install python-docx)")
     
     def _prepare_json_export(self, analysis_type: str, analysis_data: Dict[str, Any]) -> Dict[str, Any]:
         """Prepare data for JSON export"""
@@ -782,3 +845,355 @@ class BaseAnalyzer(ABC):
         else:
             report_lines.append(f"{data}")
             report_lines.append("")
+    
+    def _prepare_pdf_export(self, analysis_type: str, analysis_data: Dict[str, Any]) -> Optional[bytes]:
+        """Prepare PDF export using ReportLab"""
+        if not PDF_AVAILABLE:
+            return None
+        
+        try:
+            # Create PDF in memory
+            buffer = io.BytesIO()
+            doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72,
+                                  topMargin=72, bottomMargin=18)
+            
+            # Get styles
+            styles = getSampleStyleSheet()
+            title_style = styles['Title']
+            heading_style = styles['Heading1']
+            subheading_style = styles['Heading2']
+            normal_style = styles['Normal']
+            
+            # Create story (content)
+            story = []
+            
+            # Title
+            story.append(Paragraph(f"{analysis_type.replace('_', ' ').title()} Report", title_style))
+            story.append(Spacer(1, 12))
+            
+            # Metadata
+            story.append(Paragraph(f"<b>Repository:</b> {self.repo_path}", normal_style))
+            story.append(Paragraph(f"<b>Generated:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", normal_style))
+            story.append(Paragraph(f"<b>Analysis Type:</b> {analysis_type}", normal_style))
+            story.append(Spacer(1, 12))
+            
+            # Executive Summary
+            story.append(Paragraph("Executive Summary", heading_style))
+            story.append(Spacer(1, 6))
+            
+            # Add AI insights if available
+            if 'parallel_ai_results' in st.session_state:
+                type_mapping = {
+                    'expertise_mapping': 'expertise',
+                    'timeline_analysis': 'timeline',
+                    'api_contracts': 'api_contracts',
+                    'ai_context': 'ai_context',
+                    'risk_analysis': 'risk_analysis',
+                    'development_patterns': 'development_patterns',
+                    'version_governance': 'version_governance',
+                    'tech_debt_detection': 'tech_debt',
+                    'design_patterns': 'design_patterns'
+                }
+                
+                result_key = type_mapping.get(analysis_type, analysis_type)
+                results = st.session_state.parallel_ai_results
+                
+                if result_key in results and results[result_key].get('success', False):
+                    story.append(Paragraph("AI-Generated Insights", subheading_style))
+                    story.append(Spacer(1, 6))
+                    insight_text = str(results[result_key].get('insight', ''))
+                    # Clean up the text for PDF
+                    insight_text = insight_text.replace('**', '').replace('*', '')
+                    story.append(Paragraph(insight_text, normal_style))
+                    story.append(Spacer(1, 12))
+            
+            # Detailed Analysis Results
+            story.append(Paragraph("Detailed Analysis Results", heading_style))
+            story.append(Spacer(1, 6))
+            
+            # Convert analysis data to PDF content
+            self._add_analysis_to_pdf(story, analysis_data, styles)
+            
+            # Footer
+            story.append(Spacer(1, 12))
+            story.append(Paragraph("Report generated by AI-Powered Codebase Analyzer", normal_style))
+            
+            # Build PDF
+            doc.build(story)
+            pdf_data = buffer.getvalue()
+            buffer.close()
+            
+            return pdf_data
+            
+        except Exception as e:
+            st.warning(f"Could not generate PDF: {str(e)}")
+            return None
+    
+    def _add_analysis_to_pdf(self, story, data: Any, styles, level: int = 0):
+        """Recursively add analysis data to PDF story"""
+        from reportlab.platypus import Table, TableStyle
+        from reportlab.lib import colors as rl_colors
+        
+        try:
+            if isinstance(data, dict):
+                for key, value in data.items():
+                    if key in ['error']:  # Skip error keys
+                        continue
+                    
+                    # Ensure key is a string
+                    key_str = str(key) if key is not None else "Unknown"
+                    
+                    # Add section header
+                    if level == 0:
+                        style = styles['Heading2']
+                    elif level == 1:
+                        style = styles['Heading3'] if 'Heading3' in styles else styles['Heading2']
+                    else:
+                        style = styles['Normal']
+                    
+                    story.append(Paragraph(key_str.replace('_', ' ').title(), style))
+                    story.append(Spacer(1, 6))
+                    
+                    if isinstance(value, (dict, list)):
+                        self._add_analysis_to_pdf(story, value, styles, level + 1)
+                    else:
+                        # Convert value to string safely
+                        value_str = str(value) if value is not None else ""
+                        # Escape HTML characters for PDF
+                        value_str = value_str.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                        story.append(Paragraph(value_str, styles['Normal']))
+                        story.append(Spacer(1, 6))
+            
+            elif isinstance(data, list) and data:
+                if isinstance(data[0], dict) and len(data) > 0:
+                    # Create a table for list of dictionaries
+                    try:
+                        headers = [str(h) for h in data[0].keys()]
+                        table_data = [headers]
+                        
+                        # Add up to 20 items
+                        for item in data[:20]:
+                            if isinstance(item, dict):
+                                row = []
+                                for header in headers:
+                                    # Get original header (before str conversion)
+                                    orig_header = list(data[0].keys())[headers.index(header)]
+                                    raw_value = item.get(orig_header, "")
+                                    
+                                    # Convert to string safely
+                                    value_str = str(raw_value) if raw_value is not None else ""
+                                    
+                                    # Truncate long values
+                                    if len(value_str) > 50:
+                                        value_str = value_str[:47] + "..."
+                                    
+                                    # Escape problematic characters
+                                    value_str = value_str.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                                    row.append(value_str)
+                                table_data.append(row)
+                        
+                        # Create table with error handling
+                        if len(table_data) > 1:  # Must have headers + at least one data row
+                            table = Table(table_data)
+                            table.setStyle(TableStyle([
+                                ('BACKGROUND', (0, 0), (-1, 0), rl_colors.grey),
+                                ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
+                                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                                ('BACKGROUND', (0, 1), (-1, -1), rl_colors.beige),
+                                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                                ('GRID', (0, 0), (-1, -1), 1, rl_colors.black)
+                            ]))
+                            story.append(table)
+                            
+                            if len(data) > 20:
+                                story.append(Paragraph(f"... and {len(data) - 20} more items", styles['Normal']))
+                            
+                            story.append(Spacer(1, 12))
+                    except Exception as table_error:
+                        # Fallback to simple list if table creation fails
+                        story.append(Paragraph("Data Table (simplified due to formatting issues):", styles['Normal']))
+                        for item in data[:10]:
+                            item_str = str(item) if item is not None else "None"
+                            story.append(Paragraph(f"• {item_str}", styles['Normal']))
+                        story.append(Spacer(1, 6))
+                else:
+                    # Simple list
+                    for item in data[:50]:  # Limit to first 50 items
+                        item_str = str(item) if item is not None else "None"
+                        # Escape problematic characters
+                        item_str = item_str.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                        story.append(Paragraph(f"• {item_str}", styles['Normal']))
+                    
+                    if len(data) > 50:
+                        story.append(Paragraph(f"... and {len(data) - 50} more items", styles['Normal']))
+                    
+                    story.append(Spacer(1, 6))
+            
+            else:
+                # Single value
+                data_str = str(data) if data is not None else "None"
+                # Escape problematic characters
+                data_str = data_str.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                story.append(Paragraph(data_str, styles['Normal']))
+                story.append(Spacer(1, 6))
+                
+        except Exception as e:
+            # Fallback error handling - add a simple error message to the PDF
+            story.append(Paragraph(f"Error processing data section: {str(e)}", styles['Normal']))
+            story.append(Spacer(1, 6))
+    
+    def _prepare_docx_export(self, analysis_type: str, analysis_data: Dict[str, Any]) -> Optional[bytes]:
+        """Prepare DOCX export using python-docx"""
+        if not DOCX_AVAILABLE:
+            return None
+        
+        try:
+            # Create Word document
+            doc = Document()
+            
+            # Title
+            title = doc.add_heading(f"{analysis_type.replace('_', ' ').title()} Report", 0)
+            title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+            
+            # Add metadata
+            doc.add_paragraph(f"Repository: {self.repo_path}")
+            doc.add_paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            doc.add_paragraph(f"Analysis Type: {analysis_type}")
+            doc.add_paragraph()
+            
+            # Executive Summary
+            doc.add_heading('Executive Summary', level=1)
+            
+            # Add AI insights if available
+            if 'parallel_ai_results' in st.session_state:
+                type_mapping = {
+                    'expertise_mapping': 'expertise',
+                    'timeline_analysis': 'timeline',
+                    'api_contracts': 'api_contracts',
+                    'ai_context': 'ai_context',
+                    'risk_analysis': 'risk_analysis',
+                    'development_patterns': 'development_patterns',
+                    'version_governance': 'version_governance',
+                    'tech_debt_detection': 'tech_debt',
+                    'design_patterns': 'design_patterns'
+                }
+                
+                result_key = type_mapping.get(analysis_type, analysis_type)
+                results = st.session_state.parallel_ai_results
+                
+                if result_key in results and results[result_key].get('success', False):
+                    doc.add_heading('AI-Generated Insights', level=2)
+                    insight_text = str(results[result_key].get('insight', ''))
+                    # Clean up the text for DOCX
+                    insight_text = insight_text.replace('**', '').replace('*', '')
+                    doc.add_paragraph(insight_text)
+            
+            # Detailed Analysis Results
+            doc.add_heading('Detailed Analysis Results', level=1)
+            
+            # Convert analysis data to DOCX content
+            self._add_analysis_to_docx(doc, analysis_data)
+            
+            # Footer
+            doc.add_paragraph()
+            footer_para = doc.add_paragraph("Report generated by AI-Powered Codebase Analyzer")
+            footer_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+            
+            # Save to bytes
+            buffer = io.BytesIO()
+            doc.save(buffer)
+            docx_data = buffer.getvalue()
+            buffer.close()
+            
+            return docx_data
+            
+        except Exception as e:
+            st.warning(f"Could not generate DOCX: {str(e)}")
+            return None
+    
+    def _add_analysis_to_docx(self, doc, data: Any, level: int = 1):
+        """Recursively add analysis data to DOCX document"""
+        try:
+            if isinstance(data, dict):
+                for key, value in data.items():
+                    if key in ['error']:  # Skip error keys
+                        continue
+                    
+                    # Ensure key is a string
+                    key_str = str(key) if key is not None else "Unknown"
+                    
+                    # Add section header
+                    heading_level = min(level + 1, 3)  # Word supports up to 9 levels, but we'll use 1-3
+                    doc.add_heading(key_str.replace('_', ' ').title(), level=heading_level)
+                    
+                    if isinstance(value, (dict, list)):
+                        self._add_analysis_to_docx(doc, value, level + 1)
+                    else:
+                        # Convert value to string safely
+                        value_str = str(value) if value is not None else ""
+                        doc.add_paragraph(value_str)
+            
+            elif isinstance(data, list) and data:
+                if isinstance(data[0], dict) and len(data) > 0:
+                    # Create a table for list of dictionaries
+                    try:
+                        headers = [str(h) for h in data[0].keys()]
+                        
+                        # Create table (limit to 20 rows to keep document manageable)
+                        table_data = data[:20]
+                        if table_data:
+                            table = doc.add_table(rows=1, cols=len(headers))
+                            table.style = 'Light Grid Accent 1'
+                            
+                            # Add header row
+                            hdr_cells = table.rows[0].cells
+                            for i, header in enumerate(headers):
+                                hdr_cells[i].text = header.replace('_', ' ').title()
+                            
+                            # Add data rows
+                            for item in table_data:
+                                if isinstance(item, dict):
+                                    row_cells = table.add_row().cells
+                                    for i, header in enumerate(headers):
+                                        # Get original header (before str conversion)
+                                        orig_header = list(data[0].keys())[headers.index(header)]
+                                        raw_value = item.get(orig_header, "")
+                                        
+                                        # Convert to string safely
+                                        value_str = str(raw_value) if raw_value is not None else ""
+                                        
+                                        # Truncate long values
+                                        if len(value_str) > 100:
+                                            value_str = value_str[:97] + "..."
+                                        
+                                        row_cells[i].text = value_str
+                            
+                            if len(data) > 20:
+                                doc.add_paragraph(f"... and {len(data) - 20} more items")
+                                
+                    except Exception as table_error:
+                        # Fallback to simple list if table creation fails
+                        doc.add_paragraph("Data List (simplified due to formatting issues):")
+                        for item in data[:10]:
+                            item_str = str(item) if item is not None else "None"
+                            doc.add_paragraph(f"• {item_str}")
+                else:
+                    # Simple list
+                    for item in data[:50]:  # Limit to first 50 items
+                        item_str = str(item) if item is not None else "None"
+                        doc.add_paragraph(f"• {item_str}")
+                    
+                    if len(data) > 50:
+                        doc.add_paragraph(f"... and {len(data) - 50} more items")
+            
+            else:
+                # Single value
+                data_str = str(data) if data is not None else "None"
+                doc.add_paragraph(data_str)
+                
+        except Exception as e:
+            # Fallback error handling - add a simple error message
+            doc.add_paragraph(f"Error processing data section: {str(e)}")
