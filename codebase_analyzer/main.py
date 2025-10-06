@@ -420,7 +420,72 @@ def main():
                 st.session_state.sidebar_collapsed = True
                 st.rerun()
         
+        # Add custom CSS for spacing around text input and styling the placeholder text
+        st.markdown("""
+        <style>
+        .stTextInput > div > div > input {
+            margin-bottom: 10px !important;
+        }
+        .stTextInput > label {
+            margin-bottom: 5px !important;
+            color: black !important; /* Set label to black */
+        }
+        .stTextInput {
+            margin-bottom: 15px !important;
+        }
+        
+        /* Ensure label text stays black */
+        .stTextInput label {
+            color: black !important;
+        }
+        
+        /* ONLY target "Press Enter to apply" text - light green color */
+        /* Be very specific to avoid affecting the label */
+        .stTextInput small {
+            color: #90EE90 !important;
+        }
+        div[data-testid="stTextInput"] small {
+            color: #90EE90 !important;
+        }
+        
+        /* Target helper text that appears below input */
+        .stTextInput div[data-baseweb="input"] + div small {
+            color: #90EE90 !important;
+        }
+        .stTextInput div[data-baseweb="input"] ~ div small {
+            color: #90EE90 !important;
+        }
+        
+        /* Target any small text elements that might contain helper text */
+        .stTextInput div small:contains("Press Enter") {
+            color: #90EE90 !important;
+        }
+        .stTextInput div small:contains("apply") {
+            color: #90EE90 !important;
+        }
+        
+        /* Specific targeting for input helper text positioned below input field */
+        .stTextInput > div > div[data-baseweb="input"] + * small {
+            color: #90EE90 !important;
+        }
+        
+        /* Target any text that might be helper text but avoid affecting labels */
+        .stTextInput div:not(label) small {
+            color: #90EE90 !important;
+        }
+        
+        /* Additional safety - ensure label remains black */
+        .stTextInput > label,
+        .stTextInput label {
+            color: black !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
         repo_path = st.text_input("Repository Path", placeholder="/path/to/your/repo")
+        
+        # Add line gap between input field and validation text
+        st.markdown("")
         
         # Auto-validate repository path without button
         if repo_path and os.path.exists(repo_path):
