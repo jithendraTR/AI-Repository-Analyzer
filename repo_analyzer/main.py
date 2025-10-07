@@ -31,6 +31,17 @@ from analyzers.tech_debt_detection import TechDebtDetectionAnalyzer
 from analyzers.design_patterns import DesignPatternAnalyzer
 from utils.ai_client import OpenArenaClient
 
+class CancellationToken:
+    """Simple cancellation token for stopping analysis"""
+    def __init__(self):
+        self.cancelled = False
+    
+    def cancel(self):
+        self.cancelled = True
+    
+    def is_cancelled(self):
+        return self.cancelled
+
 class ParallelAIAnalyzer:
     """Handles parallel AI analysis for all tabs with cancellation support"""
     
@@ -68,6 +79,9 @@ class ParallelAIAnalyzer:
             
             # Progress callback for individual analyzer steps
             def analyzer_progress(step, total, status):
+                # Check for cancellation during progress updates
+                if self.cancellation_token and self.cancellation_token.is_cancelled():
+                    raise Exception("Operation was cancelled during analysis")
                 print(f"DEBUG: {analyzer_name} - Step {step}/{total}: {status}")
             
             # Get analysis data - this is now running in parallel with progress tracking
@@ -97,8 +111,17 @@ class ParallelAIAnalyzer:
                     "cancelled": True
                 }
             
-            # Get AI insight
+            # Get AI insight with more frequent cancellation checks
             insight = self.ai_client.query(prompt)
+            
+            # Final cancellation check
+            if self.cancellation_token and self.cancellation_token.is_cancelled():
+                return {
+                    "analyzer": analyzer_name,
+                    "error": "Operation was cancelled",
+                    "success": False,
+                    "cancelled": True
+                }
             
             return {
                 "analyzer": analyzer_name,
@@ -108,7 +131,7 @@ class ParallelAIAnalyzer:
             }
         except Exception as e:
             # Check if it's a cancellation
-            if "cancelled" in str(e).lower():
+            if "cancelled" in str(e).lower() or (self.cancellation_token and self.cancellation_token.is_cancelled()):
                 return {
                     "analyzer": analyzer_name,
                     "error": "Operation was cancelled",
@@ -229,103 +252,76 @@ class ParallelAIAnalyzer:
         return prompts.get(analyzer_name, f"Analyze this data: {str(analysis_data)[:2000]}")
     
     def run_parallel_analysis(self, progress_callback=None) -> Dict[str, Any]:
-        """Run AI analysis for all analyzers in parallel with cancellation support"""
+        """Run AI analysis for all analyzers sequentially with immediate cancellation support"""
         results = {}
         completed_count = 0
         total_count = len(self.analyzers)
         
+        # Immediate cancellation check before starting anything
+        if self.cancellation_token and self.cancellation_token.is_cancelled():
+            print("DEBUG: Analysis was cancelled before starting")
+            # Return cancelled results for all analyzers
+            for analyzer_name in self.analyzers.keys():
+                results[analyzer_name] = {
+                    "analyzer": analyzer_name,
+                    "error": "Operation was cancelled",
+                    "success": False,
+                    "cancelled": True
+                }
+            return results
+        
         # Debug: Print what analyzers we're about to run
-        print(f"DEBUG: Starting parallel analysis for {total_count} analyzers: {list(self.analyzers.keys())}")
+        print(f"DEBUG: Starting sequential analysis for {total_count} analyzers: {list(self.analyzers.keys())}")
         
-        # Use a smaller thread pool to avoid overwhelming the system
-        max_workers = min(total_count, 2)  # Reduced to 2 to prevent timeouts
-        print(f"DEBUG: Using {max_workers} worker threads")
-        
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit all tasks at once - this should start them all simultaneously
-            future_to_analyzer = {}
+        # Run analyzers sequentially for immediate cancellation
+        for name, analyzer in self.analyzers.items():
+            # Check cancellation before each analyzer
+            if self.cancellation_token and self.cancellation_token.is_cancelled():
+                print(f"DEBUG: Cancellation detected before starting {name}")
+                # Mark this analyzer as cancelled
+                results[name] = {
+                    "analyzer": name,
+                    "error": "Operation was cancelled",
+                    "success": False,
+                    "cancelled": True
+                }
+                # Mark all remaining analyzers as cancelled too
+                remaining_analyzers = list(self.analyzers.keys())[list(self.analyzers.keys()).index(name)+1:]
+                for remaining_name in remaining_analyzers:
+                    results[remaining_name] = {
+                        "analyzer": remaining_name,
+                        "error": "Operation was cancelled",
+                        "success": False,
+                        "cancelled": True
+                    }
+                break
             
-            # Submit all tasks and track them
-            for name, analyzer in self.analyzers.items():
-                print(f"DEBUG: Submitting {name} to thread pool")
-                future = executor.submit(self.run_single_analysis, name, analyzer)
-                future_to_analyzer[future] = name
+            print(f"DEBUG: Starting {name}")
             
-            print(f"DEBUG: All {len(future_to_analyzer)} tasks submitted to thread pool")
-            
-            # Update progress to show all analyzers are starting
+            # Update progress
             if progress_callback:
-                analyzer_names = [name.replace('_', ' ').title() for name in self.analyzers.keys()]
-                progress_callback(0, total_count, f"Starting: {', '.join(analyzer_names[:3])}{'...' if len(analyzer_names) > 3 else ''}")
+                progress_callback(completed_count, total_count, f"Running: {name.replace('_', ' ').title()}")
             
-            # Collect results as they complete with timeout
-            try:
-                for future in concurrent.futures.as_completed(future_to_analyzer, timeout=900):  # 15 minute total timeout
-                    # Check for cancellation
-                    if self.cancellation_token and self.cancellation_token.is_cancelled():
-                        print("DEBUG: Cancellation detected, stopping remaining tasks")
-                        # Cancel remaining futures
-                        for remaining_future in future_to_analyzer:
-                            if not remaining_future.done():
-                                remaining_future.cancel()
-                        
-                        # Add cancelled status to remaining analyzers
-                        for remaining_future, remaining_analyzer in future_to_analyzer.items():
-                            if not remaining_future.done():
-                                results[remaining_analyzer] = {
-                                    "analyzer": remaining_analyzer,
-                                    "error": "Operation was cancelled",
-                                    "success": False,
-                                    "cancelled": True
-                                }
-                        break
-                    
-                    analyzer_name = future_to_analyzer[future]
-                    print(f"DEBUG: {analyzer_name} completed")
-                    
-                    try:
-                        result = future.result(timeout=5)  # Short timeout since future is already done
-                        results[analyzer_name] = result
-                        completed_count += 1
-                        
-                        # Update progress if callback provided
-                        if progress_callback:
-                            # Show which analyzers are still running
-                            remaining_analyzers = [name for f, name in future_to_analyzer.items() if not f.done()]
-                            if remaining_analyzers:
-                                progress_callback(completed_count, total_count, f"Running: {', '.join(remaining_analyzers[:2])}{'...' if len(remaining_analyzers) > 2 else ''}")
-                            else:
-                                progress_callback(completed_count, total_count, "Finalizing results")
-                            
-                    except concurrent.futures.TimeoutError:
-                        print(f"DEBUG: {analyzer_name} result timed out")
-                        results[analyzer_name] = {
-                            "analyzer": analyzer_name,
-                            "error": "Result retrieval timed out",
-                            "success": False
-                        }
-                        completed_count += 1
-                    except Exception as e:
-                        print(f"DEBUG: {analyzer_name} failed with error: {str(e)}")
-                        results[analyzer_name] = {
-                            "analyzer": analyzer_name,
-                            "error": str(e),
-                            "success": False
-                        }
-                        completed_count += 1
-                        
-            except concurrent.futures.TimeoutError:
-                print("DEBUG: Overall analysis timed out")
-                # Handle any remaining futures that didn't complete
-                for future, analyzer_name in future_to_analyzer.items():
-                    if analyzer_name not in results:
-                        results[analyzer_name] = {
-                            "analyzer": analyzer_name,
-                            "error": "Analysis timed out",
-                            "success": False
-                        }
+            # Run single analysis with frequent cancellation checks
+            result = self.run_single_analysis(name, analyzer)
+            results[name] = result
+            completed_count += 1
+            
+            # Check if this analyzer was cancelled
+            if result.get('cancelled', False):
+                print(f"DEBUG: {name} was cancelled, stopping remaining analyzers")
+                # Mark all remaining analyzers as cancelled
+                remaining_analyzers = list(self.analyzers.keys())[list(self.analyzers.keys()).index(name)+1:]
+                for remaining_name in remaining_analyzers:
+                    results[remaining_name] = {
+                        "analyzer": remaining_name,
+                        "error": "Operation was cancelled",
+                        "success": False,
+                        "cancelled": True
+                    }
+                break
         
-        print(f"DEBUG: Parallel analysis completed. Results: {len(results)} analyzers")
+        print(f"DEBUG: Sequential analysis completed. Results: {len(results)} analyzers")
         return results
 
 def main():
@@ -564,6 +560,18 @@ def main():
         st.session_state.results = {}
     if 'sidebar_collapsed' not in st.session_state:
         st.session_state.sidebar_collapsed = False
+    if 'analysis_running' not in st.session_state:
+        st.session_state.analysis_running = False
+    if 'current_analyzer' not in st.session_state:
+        st.session_state.current_analyzer = None
+    if 'last_repo_path' not in st.session_state:
+        st.session_state.last_repo_path = ""
+    if 'success_message' not in st.session_state:
+        st.session_state.success_message = ""
+    if 'success_message_time' not in st.session_state:
+        st.session_state.success_message_time = 0
+    if 'cancellation_token' not in st.session_state:
+        st.session_state.cancellation_token = None
     
     # Apply CSS class conditionally for sidebar collapse with ultra-aggressive DOM manipulation
     if st.session_state.sidebar_collapsed:
@@ -703,11 +711,46 @@ def main():
                 help="Enter the full path to your Git repository"
             )
             
-            # Add instruction text positioned slightly left and overlapping much closer to text box
+            # Add instruction text positioned very close to the text box
             st.markdown(
-                '<div style="margin-top: -10px; margin-bottom: 20px; color: #888; font-size: 13px; font-style: italic; text-align: right; padding-right: 12px;">Press Enter to Apply</div>', 
+                '<div style="margin-top: -2px; margin-bottom: 8px; color: #888; font-size: 13px; font-style: italic; text-align: right; padding-right: 12px;">Press Enter to Apply</div>', 
                 unsafe_allow_html=True
             )
+            
+            # Show immediate validation feedback for any valid path entered
+            if repo_path and repo_path != "/path/to/your/repo":
+                if os.path.exists(repo_path):
+                    # Check if it's a git repository
+                    if os.path.exists(os.path.join(repo_path, '.git')):
+                        success_msg = "✅ Repository loaded successfully! Valid Git repository detected"
+                    else:
+                        success_msg = "✅ Repository loaded successfully! Directory found (not a Git repository)"
+                    
+                    # Show success message and set timer for auto-hide
+                    if st.session_state.success_message != success_msg:
+                        st.session_state.success_message = success_msg
+                        st.session_state.success_message_time = time.time()
+                    
+                    # Check if message should still be displayed (within 0.6 seconds)
+                    if time.time() - st.session_state.success_message_time < 0.6:
+                        st.success(st.session_state.success_message)
+                        # Auto-refresh to hide message after timeout
+                        time.sleep(0.1)  # Small delay to prevent too frequent refreshes
+                        st.rerun()
+                    else:
+                        # Clear the message after timeout
+                        if st.session_state.success_message:
+                            st.session_state.success_message = ""
+                else:
+                    st.error("❌ Repository path does not exist. Please check the path and try again.")
+            
+            # Check if user pressed Enter (repo path changed) and automatically trigger analysis
+            if repo_path and repo_path != "/path/to/your/repo" and repo_path != st.session_state.last_repo_path and not st.session_state.analysis_running:
+                st.session_state.last_repo_path = repo_path
+                # Only trigger analysis if path exists
+                if os.path.exists(repo_path):
+                    st.session_state.analysis_running = True
+                    st.rerun()
             
             st.markdown("---")
             
@@ -748,53 +791,125 @@ def main():
                 'design_patterns': '🏗️ Design Patterns'
             }
         
-        # Show run button only when expanded
-        if not st.session_state.sidebar_collapsed and st.button("🚀 Run Selected Analyses", type="primary", use_container_width=True):
-            if not repo_path or repo_path == "/path/to/your/repo":
-                st.error("Please enter a valid repository path!")
-            elif not os.path.exists(repo_path):
-                st.error(f"Repository path does not exist: {repo_path}")
-            elif not any(selected_analyses.values()):
-                st.error("Please select at least one analysis to run!")
+        # Show run button only when expanded and not running
+        if not st.session_state.sidebar_collapsed:
+            if not st.session_state.analysis_running:
+                if st.button("🚀 Run Selected Analyses", type="primary", use_container_width=True):
+                    if not repo_path or repo_path == "/path/to/your/repo":
+                        st.error("Please enter a valid repository path!")
+                    elif not os.path.exists(repo_path):
+                        st.error(f"Repository path does not exist: {repo_path}")
+                    elif not any(selected_analyses.values()):
+                        st.error("Please select at least one analysis to run!")
+                    else:
+                        # Start the analysis
+                        st.session_state.analysis_running = True
+                        st.session_state.analysis_complete = False
+                        st.session_state.results = {}
+                        st.rerun()
             else:
-                # Run the analysis
-                st.session_state.analysis_complete = False
-                st.session_state.results = {}
+                # Show stop button when analysis is running with improved styling
+                if st.button("⛔ Stop Analysis", type="secondary", use_container_width=True, key="stop_analysis_btn"):
+                    # Immediately stop the analysis
+                    st.session_state.analysis_running = False
+                    st.session_state.analysis_complete = False
+                    
+                    # Cancel the current analysis if it exists
+                    if st.session_state.cancellation_token:
+                        st.session_state.cancellation_token.cancel()
+                    
+                    if st.session_state.current_analyzer and hasattr(st.session_state.current_analyzer, 'cancellation_token'):
+                        if st.session_state.current_analyzer.cancellation_token:
+                            st.session_state.current_analyzer.cancellation_token.cancel()
+                    
+                    # Clear analyzer reference
+                    st.session_state.current_analyzer = None
+                    st.session_state.cancellation_token = None
+                    
+                    # Show immediate feedback
+                    st.error("🛑 Analysis stopped by user!")
+                    st.rerun()
                 
-                with st.spinner("Initializing analysis..."):
-                    try:
-                        analyzer = ParallelAIAnalyzer(repo_path)
-                        
-                        # Filter analyzers based on selection
-                        analyzer.analyzers = {
-                            k: v for k, v in analyzer.analyzers.items() 
-                            if selected_analyses.get(k, False)
-                        }
-                        
-                        # Progress tracking
-                        progress_bar = st.progress(0)
-                        status_text = st.empty()
-                        
-                        def progress_callback(completed, total, status):
-                            progress = completed / total if total > 0 else 0
-                            progress_bar.progress(progress)
-                            status_text.text(f"Progress: {completed}/{total} - {status}")
-                        
-                        # Run analysis
-                        results = analyzer.run_parallel_analysis(progress_callback)
-                        
-                        st.session_state.results = results
-                        st.session_state.analysis_complete = True
-                        
-                        progress_bar.progress(1.0)
-                        status_text.text("Analysis complete!")
-                        st.success("✅ Analysis completed successfully!")
-                        
-                    except Exception as e:
-                        st.error(f"Analysis failed: {str(e)}")
+                # Also add a disabled run button to show it's not available
+                st.button("🚀 Run Selected Analyses", type="primary", disabled=True, use_container_width=True, 
+                         help="Analysis is currently running. Click 'Stop Analysis' to cancel.")
+    
+    # Handle analysis execution
+    if st.session_state.analysis_running and not st.session_state.analysis_complete:
+        st.markdown("## 🔄 Analysis in Progress")
+        st.markdown("Running AI-powered analysis on your repository...")
+        
+        try:
+            # Get repo path from session state
+            repo_path = st.session_state.get('last_repo_path', '')
+            
+            if not repo_path or not os.path.exists(repo_path):
+                st.error("Invalid repository path!")
+                st.session_state.analysis_running = False
+                st.rerun()
+            
+            # Create analyzer
+            analyzer = ParallelAIAnalyzer(repo_path)
+            st.session_state.current_analyzer = analyzer
+            
+            # Create and set cancellation token
+            cancellation_token = CancellationToken()
+            st.session_state.cancellation_token = cancellation_token
+            analyzer.set_cancellation_token(cancellation_token)
+            
+            # Filter analyzers based on selection (use all if triggered by Enter)
+            # We need to get selected analyses from sidebar state
+            if hasattr(st.session_state, 'selected_analyses'):
+                analyzer.analyzers = {
+                    k: v for k, v in analyzer.analyzers.items() 
+                    if st.session_state.selected_analyses.get(k, True)
+                }
+            
+            # Progress tracking
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            def progress_callback(completed, total, status):
+                # Check if analysis was stopped
+                if not st.session_state.analysis_running:
+                    return
+                progress = completed / total if total > 0 else 0
+                progress_bar.progress(progress)
+                status_text.text(f"Progress: {completed}/{total} - {status}")
+            
+            # Run analysis with immediate cancellation check
+            if st.session_state.analysis_running:  # Double-check before starting
+                with st.spinner("Running analysis..."):
+                    results = analyzer.run_parallel_analysis(progress_callback)
+            else:
+                # Analysis was cancelled before it could start
+                results = {}
+                for analyzer_name in analyzer.analyzers.keys():
+                    results[analyzer_name] = {
+                        "analyzer": analyzer_name,
+                        "error": "Operation was cancelled",
+                        "success": False,
+                        "cancelled": True
+                    }
+            
+            # Store results and complete
+            st.session_state.results = results
+            st.session_state.analysis_complete = True
+            st.session_state.analysis_running = False
+            st.session_state.current_analyzer = None
+            
+            progress_bar.progress(1.0)
+            status_text.text("Analysis complete!")
+            st.success("✅ Analysis completed successfully!")
+            st.rerun()
+            
+        except Exception as e:
+            st.error(f"Analysis failed: {str(e)}")
+            st.session_state.analysis_running = False
+            st.session_state.current_analyzer = None
     
     # Main content area
-    if not st.session_state.analysis_complete:
+    elif not st.session_state.analysis_complete:
         st.markdown("## 🚀 Welcome to AI Codebase Analyzer")
         
         st.markdown("""
