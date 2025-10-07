@@ -1,20 +1,16 @@
 # AI-Powered Codebase Analyzer
 
-An AI-powered solution to accelerate codebase onboarding and architectural discovery, enabling developers to quickly understand system boundaries, integration patterns, and technical constraints within existing repositories.
+An AI-powered solution to analyze the codebase and provide one spot detailed analysis on Commits Mapping, Timeline Analysis, API Analysis, AI Integration Analysis and Risk Analysis
 
 ## Features
 
-The analyzer provides comprehensive analysis across 9 different tabs:
+The analyzer provides comprehensive analysis across 5 different tabs:
 
-1. **🧑‍💻 Expertise Mapping** - Who has worked on what (expertise mapping)
-2. **📅 Timeline Analysis** - Latest additions (project timeline understanding)
-3. **🔌 API Contracts** - Integration point discovery
-4. **🤖 AI Context** - Where to add functionality
-5. **⚠️ Risk Analysis** - Test coverage gaps
-6. **🔧 Development Patterns** - Framework usage analysis
-7. **📦 Version Governance** - Dependency management
-8. **🚨 Tech Debt Detection** - Early tech debt detection
-9. **🏗️ Design Patterns** - Deviations from design patterns
+1. **👥 Commits Mapping** - Commits mapping to developers
+2. **📅 Timeline Analysis** - Codebase timelines
+3. **🔌 API Analysis** - API endpoints details
+4. **🤖 AI Integration Analysis** - AI-powered Integration analysis
+5. **⚠️ Risk Analysis** - Test coverage gaps and security vulnerabilities
 
 ## Setup
 
@@ -49,7 +45,7 @@ The analyzer provides comprehensive analysis across 9 different tabs:
 1. Navigate to the project directory
 2. Run the Streamlit application:
    ```bash
-   streamlit run repo_analyzer/main.py
+   streamlit run codebase_analyzer/main.py
    ```
 
 3. Open your browser to `http://localhost:8501`
@@ -57,7 +53,7 @@ The analyzer provides comprehensive analysis across 9 different tabs:
 ## Usage
 
 1. **Select Repository**: Choose the repository you want to analyze (defaults to current directory)
-2. **Choose Analysis Tab**: Select from the 9 available analysis types
+2. **Choose Analysis Tab**: Select from the 5 available analysis types
 3. **Run Analysis**: Each analyzer will scan your codebase and provide insights
 4. **AI Insights**: Use the AI-powered recommendations for deeper analysis
 
@@ -85,7 +81,7 @@ response = requests.post(url, headers=headers, json=payload)
 
 ## Analysis Details
 
-### Expertise Mapping
+### Commits Mapping
 - Identifies contributors and their areas of expertise
 - Maps code ownership and knowledge distribution
 - Highlights key maintainers for different modules
@@ -95,12 +91,12 @@ response = requests.post(url, headers=headers, json=payload)
 - Identifies active development areas
 - Shows project evolution patterns
 
-### API Contracts
+### API Analysis
 - Discovers REST endpoints and API definitions
 - Maps integration points and external dependencies
 - Analyzes API versioning and compatibility
 
-### AI Context Analysis
+### AI Integration Analysis
 - Suggests optimal locations for new features
 - Identifies architectural patterns and conventions
 - Provides context-aware development guidance
@@ -110,45 +106,21 @@ response = requests.post(url, headers=headers, json=payload)
 - Highlights potential security vulnerabilities
 - Assesses code quality metrics
 
-### Development Patterns
-- Analyzes framework usage and patterns
-- Identifies coding conventions and standards
-- Maps technology stack distribution
-
-### Version Governance
-- Tracks dependency versions and updates
-- Identifies outdated or vulnerable packages
-- Suggests upgrade paths and compatibility issues
-
-### Tech Debt Detection
-- Identifies code smells and anti-patterns
-- Highlights areas needing refactoring
-- Provides technical debt prioritization
-
-### Design Pattern Analysis
-- Analyzes adherence to design patterns
-- Identifies SOLID principle violations
-- Detects architectural anti-patterns
-
 ## Project Structure
 
 ```
-repo_analyzer/
-├── repo_analyzer/
+codebase_analyzer/
+├── codebase_analyzer/
 │   └── main.py              # Main Streamlit application
 ├── utils/
 │   └── ai_client.py         # Thomson Reuters AI API client
 ├── analyzers/
 │   ├── base_analyzer.py     # Base analyzer class
-│   ├── expertise_mapping.py # Expertise mapping analyzer
+│   ├── commit_mapping.py    # Commits mapping analyzer
 │   ├── timeline_analysis.py # Timeline analysis analyzer
-│   ├── api_contracts.py     # API contracts analyzer
-│   ├── ai_context.py        # AI context analyzer
-│   ├── risk_analysis.py     # Risk analysis analyzer
-│   ├── development_patterns.py # Development patterns analyzer
-│   ├── version_governance.py   # Version governance analyzer
-│   ├── tech_debt_detection.py # Tech debt detection analyzer
-│   └── design_patterns.py     # Design patterns analyzer
+│   ├── api_analysis.py      # API analysis analyzer
+│   ├── ai_integration_analysis.py # AI integration analysis analyzer
+│   └── risk_analysis.py     # Risk analysis analyzer
 ├── requirements.txt         # Python dependencies
 ├── .env.example            # Environment variables template
 └── README.md              # This file
