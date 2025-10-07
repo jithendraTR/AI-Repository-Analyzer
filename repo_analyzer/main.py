@@ -459,84 +459,86 @@ def main():
         display: none !important;
     }
     
-    /* Custom styles for minimal sidebar collapse - only button visible with white background */
+    /* Main content area adjustments - more aggressive targeting */
+    .main, .main .block-container, .stApp > .main, [data-testid="stAppViewContainer"] .main {
+        transition: margin-left 0.3s ease, max-width 0.3s ease, width 0.3s ease !important;
+    }
+    
+    /* Target Streamlit's main content wrapper more specifically */
+    .stApp > .main {
+        margin-left: 21rem !important;
+        width: calc(100vw - 21rem) !important;
+        transition: all 0.3s ease !important;
+    }
+    
+    /* When sidebar is collapsed - main content expands to full width */
+    .sidebar-collapsed ~ .main,
+    body:has(.sidebar-collapsed) .main,
+    .stApp:has(.sidebar-collapsed) > .main {
+        margin-left: 0 !important;
+        width: 100vw !important;
+        max-width: 100vw !important;
+    }
+    
+    .sidebar-collapsed ~ .main .block-container,
+    body:has(.sidebar-collapsed) .main .block-container {
+        max-width: none !important;
+        width: 100% !important;
+        padding-left: 4rem !important;
+        padding-right: 2rem !important;
+    }
+    
+    /* Completely hide sidebar when collapsed - show only toggle button */
     [data-testid="stSidebar"].sidebar-collapsed {
-        width: 70px !important;
-        min-width: 70px !important;
-        max-width: 70px !important;
-        background: white !important;
-        background-color: white !important;
+        width: 60px !important;
+        min-width: 60px !important;
+        max-width: 60px !important;
+        background: transparent !important;
+        background-color: transparent !important;
         border: none !important;
         box-shadow: none !important;
-        border-right: 1px solid #e0e0e0 !important;
+        transition: width 0.3s ease !important;
+        position: fixed !important;
+        z-index: 999999 !important;
     }
     
+    /* Normal sidebar with smooth transition */
+    [data-testid="stSidebar"] {
+        transition: width 0.3s ease !important;
+    }
+    
+    /* Hide the gray sidebar container completely when collapsed */
     [data-testid="stSidebar"].sidebar-collapsed > div {
-        width: 70px !important;
-        min-width: 70px !important;
-        max-width: 70px !important;
-        padding: 5px !important;
-        overflow: hidden !important;
-        background: white !important;
-        background-color: white !important;
-        border: none !important;
+        display: none !important;
     }
     
-    /* Hide ALL sidebar content when collapsed except the toggle button */
+    /* Hide all sidebar content except toggle button when collapsed */
     [data-testid="stSidebar"].sidebar-collapsed .element-container:not(:first-child) {
         display: none !important;
     }
     
-    /* Set white background for all collapsed sidebar elements */
-    [data-testid="stSidebar"].sidebar-collapsed,
-    [data-testid="stSidebar"].sidebar-collapsed > div,
-    [data-testid="stSidebar"].sidebar-collapsed .stVerticalBlock,
-    [data-testid="stSidebar"].sidebar-collapsed .block-container {
-        background: white !important;
-        background-color: white !important;
-        border-left: none !important;
-        border-top: none !important;
-        border-bottom: none !important;
-    }
-    
-    [data-testid="stSidebar"].sidebar-collapsed::before,
-    [data-testid="stSidebar"].sidebar-collapsed::after {
-        display: none !important;
-        content: none !important;
-    }
-    
-    /* Make the toggle button container have white background */
+    /* Make toggle button float and be visible when collapsed */
     [data-testid="stSidebar"].sidebar-collapsed .element-container:first-child {
-        background: white !important;
-        background-color: white !important;
-        border: none !important;
-        padding: 5px !important;
-        margin: 5px !important;
-    }
-    
-    /* Target Streamlit's internal CSS classes - set to white background */
-    [data-testid="stSidebar"].sidebar-collapsed .css-1d391kg,
-    [data-testid="stSidebar"].sidebar-collapsed .css-1lcbmhc,
-    [data-testid="stSidebar"].sidebar-collapsed .css-17eq0hr,
-    [data-testid="stSidebar"].sidebar-collapsed .css-1y4p8pa,
-    [data-testid="stSidebar"].sidebar-collapsed .css-6qob1r {
-        background: white !important;
-        background-color: white !important;
-        border: none !important;
-        box-shadow: none !important;
+        position: fixed !important;
+        top: 1rem !important;
+        left: 1rem !important;
+        z-index: 999999 !important;
+        background: transparent !important;
+        width: auto !important;
+        display: block !important;
     }
     
     /* Style the toggle button to be prominent and accessible */
     [data-testid="stSidebar"] button[key="toggle_sidebar"] {
-        width: 60px !important;
-        height: 50px !important;
-        padding: 10px !important;
-        font-size: 20px !important;
+        width: 45px !important;
+        height: 45px !important;
+        padding: 5px !important;
+        font-size: 16px !important;
         background-color: #007bff !important;
         color: white !important;
         border: none !important;
-        border-radius: 10px !important;
-        margin: 0 auto !important;
+        border-radius: 8px !important;
+        margin: 2px auto !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
@@ -563,11 +565,120 @@ def main():
     if 'sidebar_collapsed' not in st.session_state:
         st.session_state.sidebar_collapsed = False
     
-    # Apply CSS class conditionally for sidebar collapse
+    # Apply CSS class conditionally for sidebar collapse with ultra-aggressive DOM manipulation
     if st.session_state.sidebar_collapsed:
         st.markdown("""
         <script>
-        document.querySelector('[data-testid="stSidebar"]').classList.add('sidebar-collapsed');
+        (function() {
+            // Force immediate execution
+            function collapseInterface() {
+                const sidebar = document.querySelector('[data-testid="stSidebar"]');
+                const main = document.querySelector('.main');
+                const mainContainer = document.querySelector('.main .block-container');
+                const stApp = document.querySelector('.stApp');
+                
+                // Completely hide sidebar - only show toggle button
+                if (sidebar) {
+                    sidebar.classList.add('sidebar-collapsed');
+                    sidebar.style.width = '60px !important';
+                    sidebar.style.minWidth = '60px !important';
+                    sidebar.style.maxWidth = '60px !important';
+                    sidebar.style.position = 'fixed';
+                    sidebar.style.zIndex = '999999';
+                    sidebar.style.background = 'transparent';
+                    sidebar.style.border = 'none';
+                    sidebar.style.transition = 'width 0.3s ease';
+                }
+                
+                // Expand main content to full width (with small margin for floating button)
+                if (main) {
+                    main.classList.add('sidebar-collapsed');
+                    main.style.marginLeft = '0 !important';
+                    main.style.width = '100vw !important';
+                    main.style.maxWidth = '100vw !important';
+                    main.style.transition = 'all 0.3s ease !important';
+                    main.style.position = 'relative';
+                    main.style.left = '0px';
+                }
+                
+                // Also target the inner container
+                if (mainContainer) {
+                    mainContainer.style.maxWidth = '100% !important';
+                    mainContainer.style.width = '100% !important';
+                    mainContainer.style.paddingLeft = '4rem !important';
+                    mainContainer.style.paddingRight = '2rem !important';
+                    mainContainer.style.marginLeft = '0 !important';
+                }
+                
+                // Set body class for global styling
+                document.body.classList.add('sidebar-collapsed');
+                document.body.style.overflow = 'auto';
+                
+                console.log('COLLAPSED: Sidebar completely hidden, main content expanded to full width');
+            }
+            
+            // Execute immediately and with delays to force layout
+            collapseInterface();
+            setTimeout(collapseInterface, 50);
+            setTimeout(collapseInterface, 200);
+            setTimeout(collapseInterface, 500);
+        })();
+        </script>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <script>
+        (function() {
+            // Force immediate execution
+            function expandInterface() {
+                const sidebar = document.querySelector('[data-testid="stSidebar"]');
+                const main = document.querySelector('.main');
+                const mainContainer = document.querySelector('.main .block-container');
+                
+                // Expand sidebar back to normal
+                if (sidebar) {
+                    sidebar.classList.remove('sidebar-collapsed');
+                    sidebar.style.width = '';
+                    sidebar.style.minWidth = '';
+                    sidebar.style.maxWidth = '';
+                    sidebar.style.position = '';
+                    sidebar.style.zIndex = '';
+                    sidebar.style.background = '';
+                    sidebar.style.borderRight = '';
+                }
+                
+                // Move main content back to normal position
+                if (main) {
+                    main.classList.remove('sidebar-collapsed');
+                    main.style.marginLeft = '21rem !important';
+                    main.style.width = 'calc(100vw - 21rem) !important';
+                    main.style.maxWidth = 'calc(100vw - 21rem) !important';
+                    main.style.transition = 'all 0.4s ease !important';
+                    main.style.position = '';
+                    main.style.left = '';
+                }
+                
+                // Reset container styles
+                if (mainContainer) {
+                    mainContainer.style.maxWidth = '';
+                    mainContainer.style.width = '';
+                    mainContainer.style.paddingLeft = '';
+                    mainContainer.style.paddingRight = '';
+                    mainContainer.style.marginLeft = '';
+                }
+                
+                // Remove body class
+                document.body.classList.remove('sidebar-collapsed');
+                
+                console.log('EXPANDED: Sidebar restored to full width, main content returned to normal');
+            }
+            
+            // Execute immediately and with delays to force layout
+            expandInterface();
+            setTimeout(expandInterface, 50);
+            setTimeout(expandInterface, 200);
+            setTimeout(expandInterface, 500);
+        })();
         </script>
         """, unsafe_allow_html=True)
     
