@@ -699,13 +699,13 @@ def main():
             # Repository path input
             repo_path = st.text_input(
                 "Repository Path",
-                value="/path/to/your/repo",
+                placeholder="/path/to/your/repo",
                 help="Enter the full path to your Git repository"
             )
             
-            # Add instruction text positioned directly under the input field
+            # Add instruction text positioned slightly left and overlapping much closer to text box
             st.markdown(
-                '<div style="margin-top: -20px; margin-bottom: 15px; color: #666; font-size: 12px; font-style: italic; text-align: right; padding-right: 2px;">Press Enter to Apply</div>', 
+                '<div style="margin-top: -10px; margin-bottom: 20px; color: #888; font-size: 13px; font-style: italic; text-align: right; padding-right: 12px;">Press Enter to Apply</div>', 
                 unsafe_allow_html=True
             )
             
