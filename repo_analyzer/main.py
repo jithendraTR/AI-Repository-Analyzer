@@ -361,15 +361,40 @@ def main():
     # Sidebar for repository selection
     with st.sidebar:
         st.header("Repository Configuration")
-        repo_path = st.text_input("Repository Path", placeholder="/path/to/your/repo")
         
-        # Auto-validate repository path without button
-        if repo_path and os.path.exists(repo_path):
-            if 'repo_path' not in st.session_state or st.session_state.repo_path != repo_path:
-                st.session_state.repo_path = repo_path
-                st.success("Repository loaded successfully!")
-        elif repo_path and not os.path.exists(repo_path):
-            st.error("Please provide a valid repository path")
+        # Repository path input with form to handle Enter key
+        with st.form("repo_path_form", clear_on_submit=False):
+            repo_path_input = st.text_input("Repository Path", 
+                                           value=st.session_state.get('repo_path_input', ''),
+                                           placeholder="/path/to/your/repo",
+                                           help="Press Enter or click Apply to load repository")
+            
+            # Apply button
+            apply_button = st.form_submit_button("📁 Apply", use_container_width=True)
+        
+        # Store the input value in session state
+        if repo_path_input != st.session_state.get('repo_path_input', ''):
+            st.session_state.repo_path_input = repo_path_input
+        
+        # Process repository loading only when Apply button is clicked or Enter is pressed
+        if apply_button:
+            if repo_path_input and os.path.exists(repo_path_input):
+                st.session_state.repo_path = repo_path_input
+                st.session_state.last_applied_path = repo_path_input
+                st.session_state.show_success_message = True
+            elif repo_path_input:
+                st.error("Please provide a valid repository path")
+            else:
+                st.warning("Please enter a repository path")
+        
+        # Show success message if repository was just loaded
+        if st.session_state.get('show_success_message', False):
+            st.success("Repository loaded successfully!")
+            # Clear the flag so message doesn't persist indefinitely
+            st.session_state.show_success_message = False
+        
+        # Get the current loaded repository path
+        repo_path = st.session_state.get('repo_path', '')
         
         # Analysis Selection Section - Always visible when repo path is provided
         if repo_path and os.path.exists(repo_path):
@@ -392,47 +417,55 @@ def main():
             if 'selected_analyses' not in st.session_state:
                 st.session_state.selected_analyses = []
             
+            # Initialize widget state to match session state
+            if 'analysis_multiselect' not in st.session_state:
+                st.session_state.analysis_multiselect = st.session_state.selected_analyses.copy()
+            
             # Quick selection buttons
             col1, col2 = st.columns(2)
             with col1:
                 if st.button("📊 Select All", key="select_all"):
                     st.session_state.selected_analyses = list(analysis_options.keys())
+                    # Update the widget state directly
+                    st.session_state.analysis_multiselect = list(analysis_options.keys())
                     st.rerun()
             with col2:
                 if st.button("🗑️ Clear All", key="clear_all"):
                     st.session_state.selected_analyses = []
+                    # Update the widget state directly
+                    st.session_state.analysis_multiselect = []
                     st.rerun()
             
-            # Use session state as the value for multiselect
+            # Use the widget key directly to control the multiselect
             selected_analyses = st.multiselect(
                 "Select analyses to run:",
                 options=list(analysis_options.keys()),
                 format_func=lambda x: analysis_options[x],
-                default=st.session_state.selected_analyses,
-                help="Choose one or more analyses to run on your repository"
+                help="Choose one or more analyses to run on your repository",
+                key="analysis_multiselect"
             )
             
             # Update session state when multiselect changes
-            if st.session_state.selected_analyses != selected_analyses:
-                st.session_state.selection_changing = True
-                st.session_state.selected_analyses = selected_analyses
-                # Clear the flag after a brief moment
-                import threading
-                def clear_flag():
-                    import time
-                    time.sleep(0.1)
-                    if 'selection_changing' in st.session_state:
-                        del st.session_state.selection_changing
-                threading.Thread(target=clear_flag, daemon=True).start()
-            else:
-                # Ensure flag is cleared if selections are the same
-                if 'selection_changing' in st.session_state:
-                    del st.session_state.selection_changing
+            # Now using the widget state directly, so sync our tracking state
+            st.session_state.selected_analyses = selected_analyses
+            
+            # Clear any previous analysis state when selection changes to prevent auto-execution
+            if 'last_selected_analyses' in st.session_state and selected_analyses != st.session_state.last_selected_analyses:
+                analysis_state_keys = ['analysis_running', 'analysis_started', 'analysis_completed', 
+                                     'analysis_results', 'analysis_button_clicked', 'analysis_cancelled',
+                                     'analysis_token', 'analyzer_progress', 'analysis_error']
+                for key in analysis_state_keys:
+                    if key in st.session_state:
+                        del st.session_state[key]
+            
+            # Track the last selection to detect changes
+            st.session_state.last_selected_analyses = selected_analyses
             
             # Run Analysis Section
             if selected_analyses:
                 st.markdown("---")
                 st.subheader("🚀 Run Analysis")
+                st.info(f"📊 {len(selected_analyses)} analysis{'es' if len(selected_analyses) > 1 else ''} selected: {', '.join([analysis_options[x] for x in selected_analyses])}")
                 
                     # Check if analysis is running
                 analysis_running = st.session_state.get('analysis_running', False)
@@ -445,6 +478,16 @@ def main():
                         st.session_state.analysis_token = f"analysis_{int(time.time())}"
                         st.rerun()
                 else:
+                    # Analysis is marked as running - check if it should actually run
+                    button_was_clicked = st.session_state.get('analysis_button_clicked', False)
+                    analysis_already_started = st.session_state.get('analysis_started', False)
+                    
+                    if not button_was_clicked and not analysis_already_started:
+                        # Analysis state is inconsistent - reset it
+                        st.session_state.analysis_running = False
+                        st.rerun()
+                        return
+                    
                     # Show progress and stop button
                     progress_bar = st.progress(0)
                     status_text = st.empty()
@@ -473,8 +516,13 @@ def main():
                         st.info("Analysis was stopped. You can start a new analysis now.")
                         st.rerun()
                     else:
-                        # Initialize analysis if not started AND button was clicked
-                        if 'analysis_started' not in st.session_state and st.session_state.get('analysis_button_clicked', False):
+                        # Initialize analysis ONLY if not started AND button was explicitly clicked
+                        button_clicked = st.session_state.get('analysis_button_clicked', False)
+                        analysis_started = st.session_state.get('analysis_started', False)
+                        
+                        if not analysis_started and button_clicked:
+                            # Immediately clear the button clicked flag to prevent re-execution
+                            st.session_state.analysis_button_clicked = False
                             st.session_state.analysis_started = True
                             st.session_state.analysis_progress = 0
                             st.session_state.analysis_status = "Starting parallel analysis..."
@@ -628,6 +676,10 @@ def main():
                 if st.button("🗑️ Clear Results", key="clear_results"):
                     del st.session_state.analysis_results
                     st.rerun()
+            else:
+                # No analyses selected
+                st.markdown("---")
+                st.info("👆 Please select one or more analyses from the dropdown above to run on your repository.")
         
         # Legacy AI Analysis Section (kept for backward compatibility but hidden)
         if False and 'repo_path' in st.session_state:
@@ -666,7 +718,8 @@ def main():
                 "Select analyses to run:",
                 options=list(analysis_options.keys()),
                 format_func=lambda x: analysis_options[x],
-                default=list(analysis_options.keys())
+                default=list(analysis_options.keys()),
+                key="selective_analysis_multiselect"
             )
             
             # Check if selective analysis is running
