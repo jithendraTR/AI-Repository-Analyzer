@@ -703,6 +703,12 @@ def main():
                 help="Enter the full path to your Git repository"
             )
             
+            # Add instruction text positioned directly under the input field
+            st.markdown(
+                '<div style="margin-top: -20px; margin-bottom: 15px; color: #666; font-size: 12px; font-style: italic; text-align: right; padding-right: 2px;">Press Enter to Apply</div>', 
+                unsafe_allow_html=True
+            )
+            
             st.markdown("---")
             
             # Analysis selection
