@@ -66,6 +66,16 @@ class BaseAnalyzer(ABC):
     """Base class for all repository analyzers"""
     
     def __init__(self, repo_path: str):
+        # Validate repository path
+        if not repo_path or not repo_path.strip():
+            raise ValueError("Repository path cannot be empty")
+        
+        if repo_path in ["/path/to/your/repo", "C:\\path\\to\\your\\repo"]:
+            raise ValueError("Please provide a valid repository path, not the placeholder text")
+        
+        if not os.path.exists(repo_path):
+            raise ValueError(f"Repository path does not exist: {repo_path}")
+        
         self.repo_path = Path(repo_path)
         self.ai_client = OpenArenaClient()
         
