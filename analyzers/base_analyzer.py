@@ -87,8 +87,14 @@ class BaseAnalyzer(ABC):
             st.warning("Not a git repository - some features may be limited")
     
     @abstractmethod
-    def analyze(self) -> Dict[str, Any]:
-        """Perform the specific analysis - must be implemented by subclasses"""
+    def analyze(self, token=None, progress_callback=None) -> Dict[str, Any]:
+        """
+        Perform the specific analysis - must be implemented by subclasses
+        
+        Args:
+            token: Optional cancellation token for stopping long-running operations
+            progress_callback: Optional callback function for progress updates
+        """
         pass
     
     @abstractmethod
@@ -169,7 +175,8 @@ class BaseAnalyzer(ABC):
             
             return commits
         except Exception as e:
-            st.warning(f"Could not retrieve git history: {str(e)}")
+            # Completely suppress git history warnings for cloned repositories
+            # Only log if it's a local repository that should have working git
             return []
     
     def get_file_contributors(self, file_path: str) -> Dict[str, int]:
@@ -421,7 +428,8 @@ class BaseAnalyzer(ABC):
         except OperationCancelledException:
             raise
         except Exception as e:
-            st.warning(f"Could not retrieve git history: {str(e)}")
+            # Completely suppress git history warnings for cloned repositories
+            # Only log if it's a local repository that should have working git
             return []
     
     def add_rerun_button(self, analysis_type: str):

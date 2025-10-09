@@ -30,6 +30,7 @@ from analyzers.version_governance import VersionGovernanceAnalyzer
 from analyzers.tech_debt_detection import TechDebtDetectionAnalyzer
 from analyzers.design_patterns import DesignPatternAnalyzer
 from utils.ai_client import OpenArenaClient
+from utils.git_handler import validate_and_prepare_repository, git_handler
 
 class CancellationToken:
     """Simple cancellation token for stopping analysis"""
@@ -577,6 +578,10 @@ def main():
         st.session_state.success_message_time = 0
     if 'cancellation_token' not in st.session_state:
         st.session_state.cancellation_token = None
+    if 'prepared_repo_info' not in st.session_state:
+        st.session_state.prepared_repo_info = None
+    if 'actual_repo_path' not in st.session_state:
+        st.session_state.actual_repo_path = ""
     
     # Apply CSS class conditionally for sidebar collapse with ultra-aggressive DOM manipulation
     if st.session_state.sidebar_collapsed:
@@ -738,22 +743,54 @@ def main():
             # Show immediate validation feedback for any valid path entered
             if repo_should_load:
                 if repo_path and repo_path.strip() and repo_path not in ["/path/to/your/repo", "C:\\path\\to\\your\\repo"]:
-                    if os.path.exists(repo_path):
-                        # Check if it's a git repository
-                        if os.path.exists(os.path.join(repo_path, '.git')):
-                            success_msg = "✅ Repository loaded successfully! Valid Git repository detected"
-                        else:
-                            success_msg = "✅ Repository loaded successfully! Directory found (not a Git repository)"
+                    # Fast path detection: check if it's a Git URL first
+                    is_git_url = (repo_path.startswith('https://github.com/') or 
+                                 repo_path.startswith('git@github.com:') or
+                                 repo_path.startswith('https://gitlab.com/') or
+                                 repo_path.startswith('git@gitlab.com:'))
+                    
+                    if is_git_url:
+                        # It's a Git URL - use the full validation and cloning process
+                        validation_result = validate_and_prepare_repository(repo_path)
                         
-                        # Show success message and store the repo path
-                        st.session_state.success_message = success_msg
-                        st.session_state.success_message_time = time.time()
-                        st.session_state.last_repo_path = repo_path
-                        st.success(success_msg)
+                        if validation_result['success']:
+                            # Clone the repository
+                            clone_result = git_handler.clone_repository(repo_path)
+                            if clone_result['success']:
+                                success_msg = f"✅ Git repository cloned successfully! {clone_result.get('info', '')}"
+                                # Store both original URL and local path
+                                st.session_state.prepared_repo_info = clone_result
+                                st.session_state.actual_repo_path = clone_result['local_path']
+                                st.session_state.last_repo_path = repo_path  # Keep original URL for display
+                            else:
+                                st.error(f"❌ Failed to clone Git repository: {clone_result['error']}")
+                                return  # Exit early on clone failure
+                        else:
+                            st.error(f"❌ Repository validation failed: {validation_result['error']}")
+                            return
                     else:
-                        st.error("❌ Repository path does not exist. Please check the path and try again.")
+                        # It's a local path - use the original fast validation (PRESERVE ORIGINAL PERFORMANCE)
+                        if os.path.exists(repo_path):
+                            # Check if it's a git repository
+                            if os.path.exists(os.path.join(repo_path, '.git')):
+                                success_msg = "✅ Repository loaded successfully! Valid Git repository detected"
+                            else:
+                                success_msg = "✅ Repository loaded successfully! Directory found (not a Git repository)"
+                            
+                            # For local paths, actual path is the same as input path (no cloning needed)
+                            st.session_state.prepared_repo_info = None
+                            st.session_state.actual_repo_path = repo_path
+                            st.session_state.last_repo_path = repo_path
+                        else:
+                            st.error("❌ Repository path does not exist. Please check the path and try again.")
+                            return
+                    
+                    # Show success message
+                    st.session_state.success_message = success_msg
+                    st.session_state.success_message_time = time.time()
+                    st.success(success_msg)
                 else:
-                    st.error("❌ Please enter a valid repository path.")
+                    st.error("❌ Please enter a valid repository path or Git URL.")
             
             # Show stored success message if within time limit
             elif st.session_state.get('success_message') and time.time() - st.session_state.get('success_message_time', 0) < 3:
@@ -870,12 +907,16 @@ def main():
                         st.rerun()
             elif not st.session_state.analysis_running:
                 if st.button(f"🚀 Run {selected_count} Selected Analyses", type="primary", use_container_width=True):
-                    # Check if repository path is properly loaded
-                    loaded_repo_path = st.session_state.get('last_repo_path', '')
-                    if not loaded_repo_path or not loaded_repo_path.strip():
+                    # Check if repository is properly loaded
+                    actual_repo_path = st.session_state.get('actual_repo_path', '')
+                    original_repo_path = st.session_state.get('last_repo_path', '')
+                    
+                    if not original_repo_path or not original_repo_path.strip():
                         st.error("Please enter a repository path and click Apply button to load it first!")
-                    elif not os.path.exists(loaded_repo_path):
-                        st.error(f"Repository path does not exist: {loaded_repo_path}")
+                    elif not actual_repo_path or not actual_repo_path.strip():
+                        st.error("Repository not properly loaded. Please click Apply button to load the repository first!")
+                    elif not os.path.exists(actual_repo_path):
+                        st.error(f"Repository path does not exist: {actual_repo_path}")
                     elif not any(selected_analyses.values()):
                         st.error("Please select at least one analysis to run!")
                     else:
@@ -901,6 +942,14 @@ def main():
                         if st.session_state.current_analyzer.cancellation_token:
                             st.session_state.current_analyzer.cancellation_token.cancel()
                     
+                    # Cleanup Git repository if it was cloned
+                    if st.session_state.get('prepared_repo_info') and st.session_state.prepared_repo_info.get('temp_dir'):
+                        temp_dir = st.session_state.prepared_repo_info['temp_dir']
+                        if git_handler.cleanup_repository(temp_dir):
+                            print(f"DEBUG: Cleaned up temporary Git repository: {temp_dir}")
+                        st.session_state.prepared_repo_info = None
+                        st.session_state.actual_repo_path = ""
+                    
                     # Clear analyzer reference
                     st.session_state.current_analyzer = None
                     st.session_state.cancellation_token = None
@@ -919,20 +968,21 @@ def main():
         st.markdown("Running AI-powered analysis on your repository...")
         
         try:
-            # Get repo path from session state
-            repo_path = st.session_state.get('last_repo_path', '')
+            # Get the actual local repository path (could be original local path or cloned Git repo path)
+            actual_repo_path = st.session_state.get('actual_repo_path', '')
+            original_repo_path = st.session_state.get('last_repo_path', '')
             
-            if not repo_path or not repo_path.strip() or repo_path in ["/path/to/your/repo", "C:\\path\\to\\your\\repo"]:
-                st.error("Invalid repository path! Please enter a valid path in the sidebar.")
+            if not actual_repo_path or not actual_repo_path.strip():
+                st.error("Invalid repository path! Please enter a valid path in the sidebar and click Apply.")
                 st.session_state.analysis_running = False
                 st.rerun()
-            elif not os.path.exists(repo_path):
-                st.error(f"Repository path does not exist: {repo_path}")
+            elif not os.path.exists(actual_repo_path):
+                st.error(f"Repository path does not exist: {actual_repo_path}")
                 st.session_state.analysis_running = False
                 st.rerun()
             
             # Create analyzer
-            analyzer = ParallelAIAnalyzer(repo_path)
+            analyzer = ParallelAIAnalyzer(actual_repo_path)
             st.session_state.current_analyzer = analyzer
             
             # Create and set cancellation token
@@ -1039,24 +1089,26 @@ def main():
                     
                     # First check if we should render with analyzer-specific UI
                     analyzer_instance = None
-                    if analyzer_name == 'timeline':
-                        analyzer_instance = TimelineAnalyzer(repo_path)
-                    elif analyzer_name == 'expertise':
-                        analyzer_instance = ExpertiseMapper(repo_path)
-                    elif analyzer_name == 'api_contracts':
-                        analyzer_instance = APIContractAnalyzer(repo_path)
-                    elif analyzer_name == 'ai_context':
-                        analyzer_instance = AIContextAnalyzer(repo_path)
-                    elif analyzer_name == 'risk_analysis':
-                        analyzer_instance = RiskAnalysisAnalyzer(repo_path)
-                    elif analyzer_name == 'development_patterns':
-                        analyzer_instance = DevelopmentPatternsAnalyzer(repo_path)
-                    elif analyzer_name == 'version_governance':
-                        analyzer_instance = VersionGovernanceAnalyzer(repo_path)
-                    elif analyzer_name == 'tech_debt':
-                        analyzer_instance = TechDebtDetectionAnalyzer(repo_path)
-                    elif analyzer_name == 'design_patterns':
-                        analyzer_instance = DesignPatternAnalyzer(repo_path)
+                    # Use actual_repo_path (could be local path or cloned Git repo path)
+                    actual_path = st.session_state.get('actual_repo_path', '')
+                    if actual_path and analyzer_name == 'timeline':
+                        analyzer_instance = TimelineAnalyzer(actual_path)
+                    elif actual_path and analyzer_name == 'expertise':
+                        analyzer_instance = ExpertiseMapper(actual_path)
+                    elif actual_path and analyzer_name == 'api_contracts':
+                        analyzer_instance = APIContractAnalyzer(actual_path)
+                    elif actual_path and analyzer_name == 'ai_context':
+                        analyzer_instance = AIContextAnalyzer(actual_path)
+                    elif actual_path and analyzer_name == 'risk_analysis':
+                        analyzer_instance = RiskAnalysisAnalyzer(actual_path)
+                    elif actual_path and analyzer_name == 'development_patterns':
+                        analyzer_instance = DevelopmentPatternsAnalyzer(actual_path)
+                    elif actual_path and analyzer_name == 'version_governance':
+                        analyzer_instance = VersionGovernanceAnalyzer(actual_path)
+                    elif actual_path and analyzer_name == 'tech_debt':
+                        analyzer_instance = TechDebtDetectionAnalyzer(actual_path)
+                    elif actual_path and analyzer_name == 'design_patterns':
+                        analyzer_instance = DesignPatternAnalyzer(actual_path)
                     
                     if analyzer_instance and hasattr(analyzer_instance, 'render'):
                         # Store the analysis data in session state so the renderer can access it
@@ -1076,12 +1128,39 @@ def main():
                             with st.expander("📊 Raw Analysis Data"):
                                 st.json(result['analysis_data'])
         
-        # Show any failures
-        failed_results = {k: v for k, v in results.items() if not v.get('success', False)}
+        # Show any failures (excluding cancelled operations)
+        failed_results = {k: v for k, v in results.items() 
+                         if not v.get('success', False) and not v.get('cancelled', False)}
         if failed_results:
             st.error("❌ Some analyses failed:")
             for analyzer_name, result in failed_results.items():
                 st.error(f"**{analyzer_name.replace('_', ' ').title()}**: {result.get('error', 'Unknown error')}")
+        
+        # Show cancelled operations separately if any
+        cancelled_results = {k: v for k, v in results.items() if v.get('cancelled', False)}
+        if cancelled_results:
+            st.warning("⚠️ Some analyses were cancelled:")
+            for analyzer_name, result in cancelled_results.items():
+                st.info(f"**{analyzer_name.replace('_', ' ').title()}**: Operation was stopped by user")
+
+# Cleanup function to be called on app exit
+def cleanup_on_exit():
+    """Clean up any temporary Git repositories on app exit"""
+    try:
+        if hasattr(st.session_state, 'prepared_repo_info') and st.session_state.get('prepared_repo_info'):
+            if st.session_state.prepared_repo_info.get('temp_dir'):
+                temp_dir = st.session_state.prepared_repo_info['temp_dir']
+                if git_handler.cleanup_repository(temp_dir):
+                    print(f"DEBUG: Cleaned up temporary Git repository on exit: {temp_dir}")
+        
+        # Also cleanup any other temporary directories tracked by git_handler
+        git_handler.cleanup_all()
+    except Exception as e:
+        print(f"Warning: Error during cleanup on exit: {e}")
 
 if __name__ == "__main__":
+    # Register cleanup function
+    import atexit
+    atexit.register(cleanup_on_exit)
+    
     main()
