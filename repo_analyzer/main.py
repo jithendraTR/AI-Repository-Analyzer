@@ -29,6 +29,7 @@ from analyzers.development_patterns import DevelopmentPatternsAnalyzer
 from analyzers.version_governance import VersionGovernanceAnalyzer
 from analyzers.tech_debt_detection import TechDebtDetectionAnalyzer
 from analyzers.design_patterns import DesignPatternAnalyzer
+from analyzers.singular_product_vision import SingularProductVisionAnalyzer
 from utils.ai_client import OpenArenaClient
 from utils.git_handler import validate_and_prepare_repository, git_handler
 
@@ -36,6 +37,7 @@ class CancellationToken:
     """Simple cancellation token for stopping analysis"""
     def __init__(self):
         self.cancelled = False
+        
     
     def cancel(self):
         self.cancelled = True
@@ -63,7 +65,8 @@ class ParallelAIAnalyzer:
             'development_patterns': DevelopmentPatternsAnalyzer(repo_path),
             'version_governance': VersionGovernanceAnalyzer(repo_path),
             'tech_debt': TechDebtDetectionAnalyzer(repo_path),
-            'design_patterns': DesignPatternAnalyzer(repo_path)
+            'design_patterns': DesignPatternAnalyzer(repo_path),
+            'singular_product_vision': SingularProductVisionAnalyzer(repo_path)
         }
         self.cancellation_token = None
     
@@ -252,6 +255,19 @@ class ParallelAIAnalyzer:
             2. Architecture consistency analysis
             3. Pattern improvement recommendations
             4. Code structure optimization suggestions
+            """,
+            
+            'singular_product_vision': f"""
+            Analyze the product vision coherence and strategic alignment:
+            {str(analysis_data)[:2000]}
+            
+            Provide:
+            1. Product vision clarity and consistency assessment
+            2. Feature alignment with strategic goals analysis
+            3. Areas where vision could be strengthened
+            4. Recommendations for maintaining product focus
+            5. Strategic suggestions for better feature coherence
+            6. Potential risks to product direction
             """
         }
         
@@ -809,7 +825,8 @@ def main():
                 'development_patterns': '🔄 Development Patterns',
                 'version_governance': '📦 Version Governance',
                 'tech_debt': '🔧 Technical Debt Detection',
-                'design_patterns': '🏗️ Design Patterns'
+                'design_patterns': '🏗️ Design Patterns',
+                'singular_product_vision': '🎯 Singular Product Vision'
             }
             
             st.markdown("Choose which analyses to run on your repository")
@@ -1109,6 +1126,8 @@ def main():
                         analyzer_instance = TechDebtDetectionAnalyzer(actual_path)
                     elif actual_path and analyzer_name == 'design_patterns':
                         analyzer_instance = DesignPatternAnalyzer(actual_path)
+                    elif actual_path and analyzer_name == 'singular_product_vision':
+                        analyzer_instance = SingularProductVisionAnalyzer(actual_path)
                     
                     if analyzer_instance and hasattr(analyzer_instance, 'render'):
                         # Store the analysis data in session state so the renderer can access it

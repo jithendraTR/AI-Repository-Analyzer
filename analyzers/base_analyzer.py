@@ -141,8 +141,16 @@ class BaseAnalyzer(ABC):
         try:
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 return f.read()
+        except PermissionError:
+            # Silently skip files with permission issues (common in temp directories)
+            return None
+        except (UnicodeDecodeError, IsADirectoryError):
+            # Silently skip binary files or directories
+            return None
         except Exception as e:
-            st.warning(f"Could not read file {file_path}: {str(e)}")
+            # Only show warning for unexpected errors, not for temp/clone directories
+            if "temp" not in str(file_path).lower() and "clone" not in str(file_path).lower():
+                st.warning(f"Could not read file {file_path}: {str(e)}")
             return None
     
     def get_git_history(self, file_path: str = None, max_commits: int = 100) -> List[Dict]:
