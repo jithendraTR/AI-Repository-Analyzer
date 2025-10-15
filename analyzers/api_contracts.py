@@ -43,7 +43,7 @@ class APIContractAnalyzer(BaseAnalyzer):
         if cached_result:
             return cached_result
         
-        total_steps = 3
+        total_steps = 7
         current_step = 0
         
         if token:
@@ -71,6 +71,42 @@ class APIContractAnalyzer(BaseAnalyzer):
         if progress_callback:
             progress_callback(current_step, total_steps, "Analyzing database schemas...")
         database_schemas = self._ultra_fast_database_discovery()
+        current_step += 1
+        
+        if token:
+            token.check_cancellation()
+        
+        # Step 4: API Stability Analysis
+        if progress_callback:
+            progress_callback(current_step, total_steps, "Analyzing API stability...")
+        api_stability = self._analyze_api_stability(rest_apis)
+        current_step += 1
+        
+        if token:
+            token.check_cancellation()
+        
+        # Step 5: Coupling Analysis
+        if progress_callback:
+            progress_callback(current_step, total_steps, "Analyzing coupling patterns...")
+        coupling_analysis = self._analyze_coupling_patterns(rest_apis, external_integrations)
+        current_step += 1
+        
+        if token:
+            token.check_cancellation()
+        
+        # Step 6: Data Flow Mapping
+        if progress_callback:
+            progress_callback(current_step, total_steps, "Mapping data flows...")
+        data_flow_mapping = self._analyze_data_flow_mapping(rest_apis, database_schemas)
+        current_step += 1
+        
+        if token:
+            token.check_cancellation()
+        
+        # Step 7: Event System Understanding
+        if progress_callback:
+            progress_callback(current_step, total_steps, "Analyzing event systems...")
+        event_system = self._analyze_event_system()
         
         # Skip expensive operations for speed
         result = {
@@ -81,7 +117,14 @@ class APIContractAnalyzer(BaseAnalyzer):
             "config_contracts": [],  # Skip for speed
             "messaging_contracts": [],  # Skip for speed  
             "openapi_specs": [],  # Skip for speed
-            "summary": self._generate_fast_summary(rest_apis, external_integrations, database_schemas)
+            "summary": self._generate_fast_summary(rest_apis, external_integrations, database_schemas),
+            # New Integration Complexity Scoring features
+            "integration_complexity_scoring": {
+                "api_stability": api_stability,
+                "coupling_analysis": coupling_analysis,
+                "data_flow_mapping": data_flow_mapping,
+                "event_system_understanding": event_system
+            }
         }
         
         # Cache the result
@@ -225,8 +268,543 @@ class APIContractAnalyzer(BaseAnalyzer):
         
         return dict(schemas)
     
-    def _generate_fast_summary(self, rest_apis: Dict, external_integrations: List, 
-                              database_schemas: Dict) -> Dict[str, Any]:
+    def _analyze_api_stability(self, rest_apis: Dict[str, List[Dict]]) -> Dict[str, Any]:
+        """Analyze API stability patterns and identify safe interfaces"""
+        stability_analysis = {
+            "stable_interfaces": [],
+            "unstable_interfaces": [],
+            "stability_factors": {},
+            "modification_indicators": {},
+            "files_analysis": []
+        }
+        
+        # Collect all API endpoints with their files
+        all_endpoints = []
+        for framework, endpoints in rest_apis.items():
+            for endpoint in endpoints:
+                all_endpoints.append({
+                    **endpoint,
+                    'framework': framework
+                })
+        
+        # Analyze each API file for stability indicators
+        api_files = set(ep['file'] for ep in all_endpoints)
+        
+        for file_path in list(api_files)[:10]:  # Limit for performance
+            try:
+                full_path = self.repo_path / file_path
+                content = self.read_file_content(full_path)
+                if not content:
+                    continue
+                
+                # Stability indicators
+                stability_score = 0
+                factors = []
+                
+                # Check for version indicators
+                if re.search(r'v\d+|version|api_version', content, re.IGNORECASE):
+                    stability_score += 20
+                    factors.append("Version management present")
+                
+                # Check for documentation
+                if re.search(r'"""[\s\S]*?"""', content) or re.search(r"'''[\s\S]*?'''", content):
+                    stability_score += 15
+                    factors.append("API documentation found")
+                
+                # Check for error handling
+                if re.search(r'try:|except:|catch|error|Error', content):
+                    stability_score += 15
+                    factors.append("Error handling implemented")
+                
+                # Check for validation
+                if re.search(r'validate|schema|pydantic|joi', content, re.IGNORECASE):
+                    stability_score += 10
+                    factors.append("Input validation present")
+                
+                # Check for deprecation warnings
+                if re.search(r'deprecat|obsolete|legacy', content, re.IGNORECASE):
+                    stability_score -= 20
+                    factors.append("Deprecation indicators found")
+                
+                # Check for TODO/FIXME comments
+                todo_count = len(re.findall(r'TODO|FIXME|BUG|HACK', content, re.IGNORECASE))
+                if todo_count > 0:
+                    stability_score -= todo_count * 5
+                    factors.append(f"{todo_count} TODO/FIXME comments")
+                
+                # Count number of endpoints in file
+                file_endpoints = [ep for ep in all_endpoints if ep['file'] == file_path]
+                endpoint_complexity = len(file_endpoints)
+                
+                file_analysis = {
+                    'file': file_path,
+                    'stability_score': max(0, min(100, stability_score)),
+                    'endpoint_count': endpoint_complexity,
+                    'factors': factors,
+                    'endpoints': [ep['endpoint'] for ep in file_endpoints]
+                }
+                
+                stability_analysis['files_analysis'].append(file_analysis)
+                
+                # Categorize endpoints
+                for ep in file_endpoints:
+                    endpoint_data = {
+                        'endpoint': ep['endpoint'],
+                        'file': file_path,
+                        'stability_score': file_analysis['stability_score'],
+                        'factors': factors
+                    }
+                    
+                    if file_analysis['stability_score'] >= 60:
+                        stability_analysis['stable_interfaces'].append(endpoint_data)
+                    else:
+                        stability_analysis['unstable_interfaces'].append(endpoint_data)
+                
+            except Exception:
+                continue
+        
+        # Generate summary factors
+        all_scores = [fa['stability_score'] for fa in stability_analysis['files_analysis']]
+        if all_scores:
+            stability_analysis['stability_factors'] = {
+                'average_stability': sum(all_scores) / len(all_scores),
+                'stable_files_count': sum(1 for score in all_scores if score >= 60),
+                'unstable_files_count': sum(1 for score in all_scores if score < 60),
+                'total_files_analyzed': len(all_scores)
+            }
+        
+        return stability_analysis
+    
+    def _analyze_coupling_patterns(self, rest_apis: Dict[str, List[Dict]], 
+                                  external_integrations: List[Dict]) -> Dict[str, Any]:
+        """Analyze coupling between different systems and APIs"""
+        coupling_analysis = {
+            "tight_coupling_indicators": [],
+            "loose_coupling_patterns": [],
+            "module_dependencies": {},
+            "impact_analysis": {},
+            "use_cases": []
+        }
+        
+        # Collect all API files and external integration files
+        api_files = set()
+        for endpoints in rest_apis.values():
+            for endpoint in endpoints:
+                api_files.add(endpoint['file'])
+        
+        external_files = set(integration['file'] for integration in external_integrations)
+        
+        # Analyze coupling patterns in API files
+        for file_path in list(api_files)[:8]:  # Limit for performance
+            try:
+                full_path = self.repo_path / file_path
+                content = self.read_file_content(full_path)
+                if not content:
+                    continue
+                
+                coupling_indicators = []
+                
+                # Check for direct database access in API layer
+                if re.search(r'\.query\(|\.execute\(|SELECT|INSERT|UPDATE|DELETE', content, re.IGNORECASE):
+                    coupling_indicators.append("Direct database access in API layer")
+                
+                # Check for hardcoded URLs or configurations
+                hardcoded_urls = re.findall(r'https?://[^\s\'"]+', content)
+                if hardcoded_urls:
+                    coupling_indicators.append(f"Hardcoded URLs found: {len(hardcoded_urls)}")
+                
+                # Check for direct service imports
+                service_imports = re.findall(r'from\s+[\w.]+service|import\s+[\w.]*service', content, re.IGNORECASE)
+                if service_imports:
+                    coupling_indicators.append(f"Direct service imports: {len(service_imports)}")
+                
+                # Check for shared state or global variables
+                if re.search(r'global\s+\w+|Global|GLOBAL|shared_state', content):
+                    coupling_indicators.append("Shared state indicators")
+                
+                # Check for exception handling across services
+                cross_service_exceptions = re.findall(r'except\s+\w*Service\w*Error|ServiceException', content)
+                if cross_service_exceptions:
+                    coupling_indicators.append("Cross-service exception handling")
+                
+                if coupling_indicators:
+                    coupling_analysis['tight_coupling_indicators'].append({
+                        'file': file_path,
+                        'indicators': coupling_indicators,
+                        'severity': 'High' if len(coupling_indicators) >= 3 else 'Medium'
+                    })
+                
+                # Look for loose coupling patterns
+                loose_patterns = []
+                
+                # Check for dependency injection
+                if re.search(r'inject|Inject|DI|dependency', content, re.IGNORECASE):
+                    loose_patterns.append("Dependency injection pattern")
+                
+                # Check for event-driven patterns
+                if re.search(r'event|Event|publish|subscribe|emit', content):
+                    loose_patterns.append("Event-driven communication")
+                
+                # Check for interface/abstract usage
+                if re.search(r'interface|Interface|abstract|Abstract|Protocol', content):
+                    loose_patterns.append("Interface-based design")
+                
+                if loose_patterns:
+                    coupling_analysis['loose_coupling_patterns'].append({
+                        'file': file_path,
+                        'patterns': loose_patterns
+                    })
+                
+            except Exception:
+                continue
+        
+        # Generate impact analysis with distinct use cases
+        use_cases = [
+            {
+                'scenario': 'Database Schema Change',
+                'impact': 'High' if any('Direct database access' in tc['indicators'] for tc in coupling_analysis['tight_coupling_indicators']) else 'Low',
+                'affected_modules': [tc['file'] for tc in coupling_analysis['tight_coupling_indicators'] if any('database' in ind.lower() for ind in tc['indicators'])],
+                'description': 'Changing database schema may require updates to multiple API endpoints'
+            },
+            {
+                'scenario': 'External Service URL Change',
+                'impact': 'High' if any('Hardcoded URLs' in tc['indicators'] for tc in coupling_analysis['tight_coupling_indicators']) else 'Low',
+                'affected_modules': [tc['file'] for tc in coupling_analysis['tight_coupling_indicators'] if any('URL' in ind for ind in tc['indicators'])],
+                'description': 'External service endpoint changes require code modifications'
+            },
+            {
+                'scenario': 'Authentication Method Change',
+                'impact': 'Medium',
+                'affected_modules': list(api_files)[:3],
+                'description': 'Authentication changes may propagate across API endpoints'
+            }
+        ]
+        
+        coupling_analysis['use_cases'] = use_cases
+        
+        # Module dependency summary
+        coupling_analysis['module_dependencies'] = {
+            'highly_coupled_modules': len(coupling_analysis['tight_coupling_indicators']),
+            'loosely_coupled_modules': len(coupling_analysis['loose_coupling_patterns']),
+            'total_api_modules': len(api_files),
+            'coupling_ratio': len(coupling_analysis['tight_coupling_indicators']) / len(api_files) if api_files else 0
+        }
+        
+        return coupling_analysis
+    
+    def _analyze_data_flow_mapping(self, rest_apis: Dict[str, List[Dict]], 
+                                  database_schemas: Dict[str, List[Dict]]) -> Dict[str, Any]:
+        """Map data flow through the system including sources, transforms, and sinks"""
+        data_flow = {
+            "data_sources": [],
+            "data_transforms": [],
+            "data_sinks": [],
+            "entry_points": [],
+            "flow_patterns": {},
+            "files_analysis": []
+        }
+        
+        # Collect all relevant files
+        api_files = set()
+        for endpoints in rest_apis.values():
+            for endpoint in endpoints:
+                api_files.add(endpoint['file'])
+        
+        # Data source patterns
+        source_patterns = {
+            'database': re.compile(r'SELECT|\.query\(|\.get\(|\.find\(|\.filter\(', re.IGNORECASE),
+            'external_api': re.compile(r'requests\.|fetch\(|axios\.|http\.|urllib', re.IGNORECASE),
+            'file_input': re.compile(r'open\(|read\(|csv\.|json\.load|yaml\.load', re.IGNORECASE),
+            'user_input': re.compile(r'request\.|input\(|form\.|POST|PUT', re.IGNORECASE),
+            'cache': re.compile(r'cache\.|redis\.|memcached', re.IGNORECASE),
+            'queue': re.compile(r'queue\.|consume\(|receive\(', re.IGNORECASE)
+        }
+        
+        # Data transform patterns
+        transform_patterns = {
+            'validation': re.compile(r'validate|schema|pydantic|joi|check', re.IGNORECASE),
+            'serialization': re.compile(r'serialize|json\.|yaml\.|pickle|marshal', re.IGNORECASE),
+            'filtering': re.compile(r'filter|where|grep|exclude', re.IGNORECASE),
+            'mapping': re.compile(r'map\(|transform|convert|format', re.IGNORECASE),
+            'aggregation': re.compile(r'sum\(|count\(|group|aggregate|reduce', re.IGNORECASE),
+            'sorting': re.compile(r'sort|order|rank', re.IGNORECASE)
+        }
+        
+        # Data sink patterns
+        sink_patterns = {
+            'database_write': re.compile(r'INSERT|UPDATE|DELETE|\.save\(|\.create\(|\.update\(', re.IGNORECASE),
+            'file_output': re.compile(r'write\(|dump\(|export|\.csv|\.json|\.txt', re.IGNORECASE),
+            'external_api_send': re.compile(r'post\(|put\(|requests\.post|axios\.post', re.IGNORECASE),
+            'response': re.compile(r'return|response|render|jsonify|json\.dumps', re.IGNORECASE),
+            'cache_write': re.compile(r'cache\.set|redis\.set|store', re.IGNORECASE),
+            'queue_publish': re.compile(r'publish\(|send\(|produce\(', re.IGNORECASE),
+            'logging': re.compile(r'log\.|logger\.|print\(|console\.log', re.IGNORECASE)
+        }
+        
+        # Analyze each API file for data flow patterns
+        for file_path in list(api_files)[:10]:  # Limit for performance
+            try:
+                full_path = self.repo_path / file_path
+                content = self.read_file_content(full_path)
+                if not content:
+                    continue
+                
+                file_sources = []
+                file_transforms = []
+                file_sinks = []
+                file_endpoints = []
+                
+                # Find data sources
+                for source_type, pattern in source_patterns.items():
+                    matches = pattern.findall(content)
+                    if matches:
+                        file_sources.append({
+                            'type': source_type,
+                            'count': len(matches),
+                            'examples': matches[:3]  # First 3 examples
+                        })
+                
+                # Find data transforms
+                for transform_type, pattern in transform_patterns.items():
+                    matches = pattern.findall(content)
+                    if matches:
+                        file_transforms.append({
+                            'type': transform_type,
+                            'count': len(matches),
+                            'examples': matches[:3]
+                        })
+                
+                # Find data sinks
+                for sink_type, pattern in sink_patterns.items():
+                    matches = pattern.findall(content)
+                    if matches:
+                        file_sinks.append({
+                            'type': sink_type,
+                            'count': len(matches),
+                            'examples': matches[:3]
+                        })
+                
+                # Find API endpoints (entry points)
+                for framework, endpoints in rest_apis.items():
+                    for endpoint in endpoints:
+                        if endpoint['file'] == file_path:
+                            file_endpoints.append({
+                                'endpoint': endpoint['endpoint'],
+                                'method': endpoint.get('methods', 'GET'),
+                                'line': endpoint.get('line', 1)
+                            })
+                
+                file_analysis = {
+                    'file': file_path,
+                    'entry_points': file_endpoints,
+                    'data_sources': file_sources,
+                    'data_transforms': file_transforms,
+                    'data_sinks': file_sinks,
+                    'flow_complexity': len(file_sources) + len(file_transforms) + len(file_sinks)
+                }
+                
+                data_flow['files_analysis'].append(file_analysis)
+                
+                # Add to global collections
+                data_flow['data_sources'].extend(file_sources)
+                data_flow['data_transforms'].extend(file_transforms)
+                data_flow['data_sinks'].extend(file_sinks)
+                data_flow['entry_points'].extend(file_endpoints)
+                
+            except Exception:
+                continue
+        
+        # Aggregate flow patterns
+        source_summary = {}
+        transform_summary = {}
+        sink_summary = {}
+        
+        for source in data_flow['data_sources']:
+            source_type = source['type']
+            source_summary[source_type] = source_summary.get(source_type, 0) + source['count']
+        
+        for transform in data_flow['data_transforms']:
+            transform_type = transform['type']
+            transform_summary[transform_type] = transform_summary.get(transform_type, 0) + transform['count']
+        
+        for sink in data_flow['data_sinks']:
+            sink_type = sink['type']
+            sink_summary[sink_type] = sink_summary.get(sink_type, 0) + sink['count']
+        
+        data_flow['flow_patterns'] = {
+            'sources_summary': source_summary,
+            'transforms_summary': transform_summary,
+            'sinks_summary': sink_summary,
+            'total_entry_points': len(data_flow['entry_points']),
+            'files_with_data_flow': len([f for f in data_flow['files_analysis'] if f['flow_complexity'] > 0])
+        }
+        
+        return data_flow
+    
+    def _analyze_event_system(self) -> Dict[str, Any]:
+        """Analyze pub/sub patterns and event dependency chains"""
+        event_system = {
+            "event_files": [],
+            "events_dispatched": [],
+            "events_received": [],
+            "event_patterns": {},
+            "dependency_chains": []
+        }
+        
+        # Event patterns to look for
+        event_patterns = {
+            'publish': re.compile(r'publish\(|emit\(|dispatch\(|trigger\(|fire\(', re.IGNORECASE),
+            'subscribe': re.compile(r'subscribe\(|on\(|listen\(|addEventListener|bind\(', re.IGNORECASE),
+            'event_handler': re.compile(r'@event|@listener|event_handler|on_\w+|handle_\w+', re.IGNORECASE),
+            'event_bus': re.compile(r'event_bus|EventBus|events\.|Events\.', re.IGNORECASE),
+            'message_queue': re.compile(r'queue|Queue|publish|subscribe|kafka|rabbitmq', re.IGNORECASE)
+        }
+        
+        # Search through code files
+        code_files = self.get_file_list(['.py', '.js', '.ts', '.java'])[:15]  # Limit for performance
+        
+        for file_path in code_files:
+            try:
+                content = self.read_file_content(file_path)
+                if not content:
+                    continue
+                
+                relative_path = str(file_path.relative_to(self.repo_path))
+                
+                file_events_dispatched = []
+                file_events_received = []
+                file_has_events = False
+                
+                # Look for event dispatch patterns
+                publish_matches = event_patterns['publish'].finditer(content)
+                for match in publish_matches:
+                    # Try to extract event name from context
+                    line_start = content.rfind('\n', 0, match.start()) + 1
+                    line_end = content.find('\n', match.end())
+                    if line_end == -1:
+                        line_end = len(content)
+                    line_content = content[line_start:line_end]
+                    
+                    # Extract event name (basic parsing)
+                    event_name = "unknown_event"
+                    if '"' in line_content:
+                        try:
+                            # Basic event name extraction
+                            quotes = line_content.split('"')
+                            if len(quotes) > 1:
+                                event_name = quotes[1]
+                        except Exception:
+                            event_name = "parse_error"
+                    
+                    file_events_dispatched.append({
+                        'event_name': event_name,
+                        'pattern': match.group(0),
+                        'line': content[:match.start()].count('\n') + 1
+                    })
+                    file_has_events = True
+                
+                # Look for event subscription patterns
+                subscribe_matches = event_patterns['subscribe'].finditer(content)
+                for match in subscribe_matches:
+                    line_start = content.rfind('\n', 0, match.start()) + 1
+                    line_end = content.find('\n', match.end())
+                    if line_end == -1:
+                        line_end = len(content)
+                    line_content = content[line_start:line_end]
+                    
+                    event_name = "unknown_event"
+                    if '"' in line_content:
+                        try:
+                            quotes = line_content.split('"')
+                            if len(quotes) > 1:
+                                event_name = quotes[1]
+                        except Exception:
+                            event_name = "parse_error"
+                    
+                    file_events_received.append({
+                        'event_name': event_name,
+                        'pattern': match.group(0),
+                        'line': content[:match.start()].count('\n') + 1
+                    })
+                    file_has_events = True
+                
+                # Add file to analysis if it has events
+                if file_has_events:
+                    event_system['event_files'].append({
+                        'file': relative_path,
+                        'events_dispatched': file_events_dispatched,
+                        'events_received': file_events_received,
+                        'dispatch_count': len(file_events_dispatched),
+                        'receive_count': len(file_events_received)
+                    })
+                    
+                    # Add to global collections
+                    event_system['events_dispatched'].extend(file_events_dispatched)
+                    event_system['events_received'].extend(file_events_received)
+                
+            except Exception:
+                continue
+        
+        # Create event summary table
+        event_files_summary = []
+        for file_data in event_system['event_files']:
+            for event in file_data['events_dispatched']:
+                event_files_summary.append({
+                    'file': file_data['file'],
+                    'event_name': event['event_name'],
+                    'action': 'dispatched',
+                    'pattern': event['pattern'],
+                    'line': event['line']
+                })
+            
+            for event in file_data['events_received']:
+                event_files_summary.append({
+                    'file': file_data['file'],
+                    'event_name': event['event_name'],
+                    'action': 'received',
+                    'pattern': event['pattern'],
+                    'line': event['line']
+                })
+        
+        # Analyze event patterns
+        dispatch_counts = {}
+        receive_counts = {}
+        
+        for event in event_system['events_dispatched']:
+            event_name = event['event_name']
+            dispatch_counts[event_name] = dispatch_counts.get(event_name, 0) + 1
+        
+        for event in event_system['events_received']:
+            event_name = event['event_name']
+            receive_counts[event_name] = receive_counts.get(event_name, 0) + 1
+        
+        event_system['event_patterns'] = {
+            'total_files_with_events': len(event_system['event_files']),
+            'total_events_dispatched': len(event_system['events_dispatched']),
+            'total_events_received': len(event_system['events_received']),
+            'unique_dispatched_events': len(dispatch_counts),
+            'unique_received_events': len(receive_counts),
+            'dispatch_summary': dispatch_counts,
+            'receive_summary': receive_counts
+        }
+        
+        # Create dependency chains (basic analysis)
+        dependency_chains = []
+        for event_name in dispatch_counts:
+            if event_name in receive_counts:
+                dependency_chains.append({
+                    'event_name': event_name,
+                    'publishers': dispatch_counts[event_name],
+                    'subscribers': receive_counts[event_name],
+                    'coupling_strength': 'High' if dispatch_counts[event_name] > 2 or receive_counts[event_name] > 2 else 'Low'
+                })
+        
+        event_system['dependency_chains'] = dependency_chains
+        
+        return event_system
+    
+    def _generate_fast_summary(self, rest_apis: Dict[str, List[Dict]], external_integrations: List[Dict], 
+                              database_schemas: Dict[str, List[Dict]]) -> Dict[str, Any]:
         """Generate fast summary with minimal calculations"""
         
         total_rest_endpoints = sum(len(endpoints) for endpoints in rest_apis.values())
@@ -1039,6 +1617,197 @@ class APIContractAnalyzer(BaseAnalyzer):
                     st.markdown(insights)
                 else:
                     st.error("Failed to generate AI insights")
+        
+        # Integration Complexity Scoring Features
+        st.subheader("🎯 Integration Complexity Scoring")
+        
+        if "integration_complexity_scoring" in analysis:
+            complexity_data = analysis["integration_complexity_scoring"]
+            
+            # API Stability Analysis
+            if "api_stability" in complexity_data:
+                st.write("**🔒 API Stability Analysis**")
+                stability = complexity_data["api_stability"]
+                
+                if stability["files_analysis"]:
+                    stability_df = pd.DataFrame([
+                        {
+                            "File": file_data["file"],
+                            "Stability Score": f"{file_data['stability_score']}/100",
+                            "Endpoint Count": file_data["endpoint_count"],
+                            "Key Factors": ", ".join(file_data["factors"][:2])  # Show first 2 factors
+                        }
+                        for file_data in stability["files_analysis"]
+                    ])
+                    
+                    st.dataframe(stability_df, use_container_width=True)
+                    
+                    # Stability distribution chart
+                    if stability["stability_factors"]:
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("Average Stability", f"{stability['stability_factors']['average_stability']:.1f}/100")
+                            st.metric("Stable Files", stability["stability_factors"]["stable_files_count"])
+                        with col2:
+                            st.metric("Unstable Files", stability["stability_factors"]["unstable_files_count"])
+                            st.metric("Total Analyzed", stability["stability_factors"]["total_files_analyzed"])
+                else:
+                    st.info("No API stability data found")
+            
+            # Coupling Analysis
+            if "coupling_analysis" in complexity_data:
+                st.write("**🔗 Coupling Analysis**")
+                coupling = complexity_data["coupling_analysis"]
+                
+                if coupling["tight_coupling_indicators"]:
+                    st.write("*Tight Coupling Indicators:*")
+                    coupling_df = pd.DataFrame([
+                        {
+                            "File": indicator["file"],
+                            "Severity": indicator["severity"],
+                            "Issues": len(indicator["indicators"]),
+                            "Main Issues": ", ".join(indicator["indicators"][:2])
+                        }
+                        for indicator in coupling["tight_coupling_indicators"]
+                    ])
+                    st.dataframe(coupling_df, use_container_width=True)
+                
+                # Use Cases Impact Analysis
+                if coupling["use_cases"]:
+                    st.write("*Impact Analysis - Distinct Use Cases:*")
+                    use_cases_df = pd.DataFrame([
+                        {
+                            "Scenario": case["scenario"],
+                            "Impact": case["impact"],
+                            "Affected Modules": len(case["affected_modules"]),
+                            "Description": case["description"]
+                        }
+                        for case in coupling["use_cases"]
+                    ])
+                    st.dataframe(use_cases_df, use_container_width=True)
+                
+                # Coupling summary metrics
+                if coupling["module_dependencies"]:
+                    deps = coupling["module_dependencies"]
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Highly Coupled", deps["highly_coupled_modules"])
+                    with col2:
+                        st.metric("Loosely Coupled", deps["loosely_coupled_modules"])
+                    with col3:
+                        st.metric("Coupling Ratio", f"{deps['coupling_ratio']:.2f}")
+            
+            # Data Flow Mapping
+            if "data_flow_mapping" in complexity_data:
+                st.write("**📊 Data Flow Mapping**")
+                data_flow = complexity_data["data_flow_mapping"]
+                
+                if data_flow["flow_patterns"]:
+                    patterns = data_flow["flow_patterns"]
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.metric("Entry Points", patterns["total_entry_points"])
+                        st.metric("Files with Data Flow", patterns["files_with_data_flow"])
+                    
+                    # Data sources chart
+                    if patterns["sources_summary"]:
+                        fig_sources = px.bar(
+                            x=list(patterns["sources_summary"].keys()),
+                            y=list(patterns["sources_summary"].values()),
+                            title="Data Sources Distribution",
+                            labels={"x": "Source Type", "y": "Count"}
+                        )
+                        st.plotly_chart(fig_sources, use_container_width=True)
+                    
+                    # Data sinks chart
+                    if patterns["sinks_summary"]:
+                        fig_sinks = px.bar(
+                            x=list(patterns["sinks_summary"].keys()),
+                            y=list(patterns["sinks_summary"].values()),
+                            title="Data Sinks Distribution",
+                            labels={"x": "Sink Type", "y": "Count"}
+                        )
+                        st.plotly_chart(fig_sinks, use_container_width=True)
+                
+                # File-level data flow analysis
+                if data_flow["files_analysis"]:
+                    st.write("*Files with Data Flow (showing entry points and flow complexity):*")
+                    flow_df = pd.DataFrame([
+                        {
+                            "File": file_data["file"],
+                            "Entry Points": len(file_data["entry_points"]),
+                            "API Endpoints": ", ".join([ep["endpoint"] for ep in file_data["entry_points"][:2]]),
+                            "Flow Complexity": file_data["flow_complexity"],
+                            "Sources": len(file_data["data_sources"]),
+                            "Transforms": len(file_data["data_transforms"]),
+                            "Sinks": len(file_data["data_sinks"])
+                        }
+                        for file_data in data_flow["files_analysis"][:10]  # Show first 10
+                    ])
+                    st.dataframe(flow_df, use_container_width=True)
+            
+            # Event System Understanding
+            if "event_system_understanding" in complexity_data:
+                st.write("**⚡ Event System Understanding**")
+                events = complexity_data["event_system_understanding"]
+                
+                if events["event_patterns"]:
+                    patterns = events["event_patterns"]
+                    
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Files with Events", patterns["total_files_with_events"])
+                    with col2:
+                        st.metric("Events Dispatched", patterns["total_events_dispatched"])
+                    with col3:
+                        st.metric("Events Received", patterns["total_events_received"])
+                
+                # Event dependency chains
+                if events["dependency_chains"]:
+                    st.write("*Event Dependency Chains:*")
+                    chains_df = pd.DataFrame([
+                        {
+                            "Event Name": chain["event_name"],
+                            "Publishers": chain["publishers"],
+                            "Subscribers": chain["subscribers"],
+                            "Coupling Strength": chain["coupling_strength"]
+                        }
+                        for chain in events["dependency_chains"]
+                    ])
+                    st.dataframe(chains_df, use_container_width=True)
+                
+                # Events table listing files, events dispatched, and events received
+                if events["event_files"]:
+                    st.write("*Files with Event Activity:*")
+                    event_table_data = []
+                    
+                    for file_data in events["event_files"]:
+                        # Add dispatched events
+                        for event in file_data["events_dispatched"]:
+                            event_table_data.append({
+                                "File": file_data["file"],
+                                "Event Name": event["event_name"],
+                                "Action": "Dispatched",
+                                "Pattern": event["pattern"],
+                                "Line": event["line"]
+                            })
+                        
+                        # Add received events
+                        for event in file_data["events_received"]:
+                            event_table_data.append({
+                                "File": file_data["file"],
+                                "Event Name": event["event_name"],
+                                "Action": "Received",
+                                "Pattern": event["pattern"],
+                                "Line": event["line"]
+                            })
+                    
+                    if event_table_data:
+                        events_table_df = pd.DataFrame(event_table_data[:20])  # Show first 20
+                        st.dataframe(events_table_df, use_container_width=True)
+                else:
+                    st.info("No event system patterns found")
         
         # Add save options
         self.add_save_options("api_contracts", analysis)
