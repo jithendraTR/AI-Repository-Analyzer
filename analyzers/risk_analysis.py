@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 
 from .base_analyzer import BaseAnalyzer
+from .expertise_mapping import ExpertiseMapper
 
 class RiskAnalysisAnalyzer(BaseAnalyzer):
     """Analyzes codebase for risk factors and test coverage gaps"""
@@ -42,7 +43,7 @@ class RiskAnalysisAnalyzer(BaseAnalyzer):
             return cached_result
         
         try:
-            total_steps = 3  # Reduced to 3 steps only
+            total_steps = 4  # Updated to 4 steps including knowledge risk assessment
             current_step = 0
             
             # Step 1: Ultra-fast test coverage analysis
@@ -73,6 +74,16 @@ class RiskAnalysisAnalyzer(BaseAnalyzer):
                 token.check_cancellation()
             
             security_risks = self._ultra_fast_security_scan(token)
+            current_step += 1
+            
+            # Step 4: Knowledge Risk Assessment
+            if progress_callback:
+                progress_callback(current_step, total_steps, "Analyzing knowledge risks and single points of failure...")
+            
+            if token:
+                token.check_cancellation()
+            
+            knowledge_risks = self._analyze_knowledge_risks(token)
             
             # Skip expensive operations for speed - generate quick summary
             result = {
@@ -83,8 +94,9 @@ class RiskAnalysisAnalyzer(BaseAnalyzer):
                 "security_risks": security_risks,
                 "deprecated_code": [],  # Skip for ultra-fast mode
                 "dependency_risks": {"outdated_dependencies": []},  # Skip for speed
+                "knowledge_risks": knowledge_risks,  # NEW: Knowledge risk assessment
                 "risk_summary": self._generate_fast_risk_summary(
-                    test_coverage, complexity_analysis, security_risks
+                    test_coverage, complexity_analysis, security_risks, knowledge_risks
                 )
             }
             
@@ -492,6 +504,247 @@ class RiskAnalysisAnalyzer(BaseAnalyzer):
         security_risks.sort(key=lambda x: x["severity"], reverse=True)
         return security_risks[:20]
     
+    def _analyze_knowledge_risks(self, token=None) -> Dict[str, Any]:
+        """Analyze knowledge risks and single points of failure in team expertise"""
+        
+        knowledge_risks = {
+            "single_point_failures": [],
+            "knowledge_silos": [],
+            "bus_factor_risks": [],
+            "critical_files_with_few_contributors": [],
+            "summary": {
+                "total_risks": 0,
+                "high_risk_files": 0,
+                "contributors_at_risk": 0
+            }
+        }
+        
+        try:
+            # Use ExpertiseMapper to get team contribution data
+            expertise_mapper = ExpertiseMapper(self.repo_path, self.repo, self.ai_client)
+            expertise_data = expertise_mapper.analyze(token=token)
+            
+            if "error" in expertise_data:
+                return knowledge_risks
+            
+            file_expertise = expertise_data.get("file_expertise", {})
+            tech_expertise = expertise_data.get("tech_expertise", {})
+            
+            # Analyze file-level single points of failure
+            self._identify_file_spofs(file_expertise, knowledge_risks, token)
+            
+            # Analyze technology-level knowledge silos
+            self._identify_technology_silos(tech_expertise, knowledge_risks)
+            
+            # Calculate bus factor risks
+            self._calculate_bus_factor_risks(file_expertise, knowledge_risks)
+            
+            # Identify critical files with limited knowledge
+            self._identify_critical_files_limited_knowledge(file_expertise, knowledge_risks)
+            
+            # Generate summary
+            knowledge_risks["summary"]["total_risks"] = (
+                len(knowledge_risks["single_point_failures"]) + 
+                len(knowledge_risks["knowledge_silos"]) + 
+                len(knowledge_risks["bus_factor_risks"])
+            )
+            knowledge_risks["summary"]["high_risk_files"] = len(knowledge_risks["critical_files_with_few_contributors"])
+            knowledge_risks["summary"]["contributors_at_risk"] = len(set(
+                risk.get("primary_contributor", "") for risk in 
+                knowledge_risks["single_point_failures"] + knowledge_risks["bus_factor_risks"]
+            ))
+            
+        except Exception as e:
+            # Return empty structure on error but don't fail the entire analysis
+            pass
+        
+        return knowledge_risks
+    
+    def _identify_file_spofs(self, file_expertise: Dict, knowledge_risks: Dict, token=None) -> None:
+        """Identify files with single points of failure (only one contributor)"""
+        
+        for file_path, contributors in file_expertise.items():
+            if token:
+                token.check_cancellation()
+            
+            total_commits = sum(contributors.values())
+            contributor_count = len(contributors)
+            
+            # Check for single point of failure (only one contributor)
+            if contributor_count == 1:
+                primary_contributor = list(contributors.keys())[0]
+                
+                # Calculate file complexity/importance
+                file_complexity = self._calculate_file_importance(file_path, total_commits)
+                
+                risk_explanation = f"Critical knowledge risk: Only {primary_contributor} has worked on this file ({total_commits} commits). If this person leaves, knowledge transfer will be difficult."
+                
+                knowledge_risks["single_point_failures"].append({
+                    "file": file_path,
+                    "primary_contributor": primary_contributor,
+                    "commits": total_commits,
+                    "risk_level": self._calculate_spof_risk_level(file_complexity, total_commits),
+                    "explanation": risk_explanation,
+                    "mitigation_suggestion": "Assign secondary developers to review and contribute to this file"
+                })
+            
+            # Check for dominant contributor (>80% of commits)
+            elif contributor_count > 1:
+                sorted_contributors = sorted(contributors.items(), key=lambda x: x[1], reverse=True)
+                primary_contributor, primary_commits = sorted_contributors[0]
+                
+                if primary_commits / total_commits > 0.8:
+                    file_complexity = self._calculate_file_importance(file_path, total_commits)
+                    
+                    risk_explanation = f"Knowledge concentration risk: {primary_contributor} owns {primary_commits}/{total_commits} commits ({(primary_commits/total_commits)*100:.1f}%). Limited knowledge sharing detected."
+                    
+                    knowledge_risks["bus_factor_risks"].append({
+                        "file": file_path,
+                        "primary_contributor": primary_contributor,
+                        "primary_commits": primary_commits,
+                        "total_commits": total_commits,
+                        "dominance_percentage": (primary_commits / total_commits) * 100,
+                        "risk_level": self._calculate_spof_risk_level(file_complexity, total_commits),
+                        "explanation": risk_explanation,
+                        "mitigation_suggestion": "Encourage knowledge sharing through code reviews and pair programming"
+                    })
+    
+    def _identify_technology_silos(self, tech_expertise: Dict, knowledge_risks: Dict) -> None:
+        """Identify technology areas with knowledge silos"""
+        
+        for technology, contributors in tech_expertise.items():
+            total_commits = sum(contributors.values())
+            contributor_count = len(contributors)
+            
+            # Technology handled by only one person
+            if contributor_count == 1:
+                primary_contributor = list(contributors.keys())[0]
+                
+                risk_explanation = f"Technology silo risk: Only {primary_contributor} has expertise in {technology} ({total_commits} commits). This creates a critical dependency on one person."
+                
+                knowledge_risks["knowledge_silos"].append({
+                    "technology": technology,
+                    "primary_contributor": primary_contributor,
+                    "commits": total_commits,
+                    "risk_level": "high" if total_commits > 20 else "medium",
+                    "explanation": risk_explanation,
+                    "mitigation_suggestion": f"Cross-train other team members in {technology} through workshops or mentoring"
+                })
+            
+            # Technology dominated by one contributor (>75% of commits)
+            elif contributor_count > 1:
+                sorted_contributors = sorted(contributors.items(), key=lambda x: x[1], reverse=True)
+                primary_contributor, primary_commits = sorted_contributors[0]
+                
+                if primary_commits / total_commits > 0.75:
+                    risk_explanation = f"Technology concentration risk: {primary_contributor} dominates {technology} with {primary_commits}/{total_commits} commits ({(primary_commits/total_commits)*100:.1f}%)."
+                    
+                    knowledge_risks["knowledge_silos"].append({
+                        "technology": technology,
+                        "primary_contributor": primary_contributor,
+                        "primary_commits": primary_commits,
+                        "total_commits": total_commits,
+                        "dominance_percentage": (primary_commits / total_commits) * 100,
+                        "risk_level": "medium",
+                        "explanation": risk_explanation,
+                        "mitigation_suggestion": f"Distribute {technology} work among team members to reduce concentration"
+                    })
+    
+    def _calculate_bus_factor_risks(self, file_expertise: Dict, knowledge_risks: Dict) -> None:
+        """Calculate overall bus factor risks for the project"""
+        
+        # Count files where each person is the primary contributor
+        primary_contributor_counts = defaultdict(int)
+        
+        for file_path, contributors in file_expertise.items():
+            if contributors:
+                primary_contributor = max(contributors.items(), key=lambda x: x[1])[0]
+                primary_contributor_counts[primary_contributor] += 1
+        
+        # Identify people who are critical (primary for many files)
+        for contributor, file_count in primary_contributor_counts.items():
+            if file_count >= 5:  # Primary contributor for 5 or more files
+                risk_explanation = f"Bus factor risk: {contributor} is the primary contributor for {file_count} files. Loss of this person would significantly impact project knowledge."
+                
+                knowledge_risks["bus_factor_risks"].append({
+                    "contributor": contributor,
+                    "primary_files_count": file_count,
+                    "risk_level": "high" if file_count >= 10 else "medium",
+                    "explanation": risk_explanation,
+                    "mitigation_suggestion": "Implement knowledge transfer sessions and documentation for this contributor's areas"
+                })
+    
+    def _identify_critical_files_limited_knowledge(self, file_expertise: Dict, knowledge_risks: Dict) -> None:
+        """Identify important files with limited contributor diversity"""
+        
+        critical_files = []
+        
+        for file_path, contributors in file_expertise.items():
+            total_commits = sum(contributors.values())
+            contributor_count = len(contributors)
+            
+            # Consider files with significant activity but few contributors
+            if total_commits >= 10 and contributor_count <= 2:
+                file_complexity = self._calculate_file_importance(file_path, total_commits)
+                
+                primary_contributors = sorted(contributors.items(), key=lambda x: x[1], reverse=True)
+                contributor_names = [name for name, _ in primary_contributors]
+                
+                risk_explanation = f"Limited knowledge diversity: Important file with {total_commits} commits but only {contributor_count} contributor(s): {', '.join(contributor_names)}."
+                
+                critical_files.append({
+                    "file": file_path,
+                    "total_commits": total_commits,
+                    "contributor_count": contributor_count,
+                    "contributors": contributor_names,
+                    "importance_score": file_complexity,
+                    "risk_level": self._calculate_spof_risk_level(file_complexity, total_commits),
+                    "explanation": risk_explanation,
+                    "mitigation_suggestion": "Encourage more team members to review and contribute to this file"
+                })
+        
+        # Sort by importance score and keep top risks
+        critical_files.sort(key=lambda x: x["importance_score"], reverse=True)
+        knowledge_risks["critical_files_with_few_contributors"] = critical_files[:15]
+    
+    def _calculate_file_importance(self, file_path: str, commit_count: int) -> float:
+        """Calculate importance score for a file based on various factors"""
+        
+        importance = 0.0
+        
+        # Base score from commit activity
+        importance += min(commit_count * 0.5, 50)  # Cap at 50 points
+        
+        # Bonus for file type/location importance
+        if any(pattern in file_path.lower() for pattern in ['main', 'index', 'app', 'core', 'base']):
+            importance += 20
+        
+        if any(pattern in file_path.lower() for pattern in ['config', 'settings', 'env']):
+            importance += 15
+        
+        if any(pattern in file_path.lower() for pattern in ['api', 'server', 'client']):
+            importance += 10
+        
+        # File extension importance
+        if file_path.endswith(('.py', '.js', '.ts', '.java', '.cpp')):
+            importance += 5
+        
+        # Path depth (deeper files might be more specialized)
+        path_depth = file_path.count('/')
+        importance += max(0, 10 - path_depth)  # Prefer files closer to root
+        
+        return importance
+    
+    def _calculate_spof_risk_level(self, importance: float, commits: int) -> str:
+        """Calculate risk level for single point of failure"""
+        
+        if importance > 50 or commits > 50:
+            return "high"
+        elif importance > 25 or commits > 20:
+            return "medium"
+        else:
+            return "low"
+    
     def _get_quick_severity(self, risk_type: str) -> int:
         """Quick security severity mapping"""
         severity_map = {
@@ -501,8 +754,8 @@ class RiskAnalysisAnalyzer(BaseAnalyzer):
         }
         return severity_map.get(risk_type, 5)
     
-    def _generate_fast_risk_summary(self, test_coverage: Dict, complexity: Dict, security_risks: List) -> Dict[str, Any]:
-        """Generate fast risk summary with minimal calculations"""
+    def _generate_fast_risk_summary(self, test_coverage: Dict, complexity: Dict, security_risks: List, knowledge_risks: Dict) -> Dict[str, Any]:
+        """Generate fast risk summary with minimal calculations including knowledge risks"""
         
         summary = {
             "overall_risk_score": 0,
@@ -511,269 +764,21 @@ class RiskAnalysisAnalyzer(BaseAnalyzer):
             "test_coverage_score": test_coverage.get("coverage_ratio", 0) * 100,
             "complexity_score": complexity.get("average_complexity", 0),
             "security_issues": len(security_risks),
+            "knowledge_risk_score": knowledge_risks.get("summary", {}).get("total_risks", 0),
             "untested_high_complexity": 0
         }
         
-        # Quick risk score calculation
-        coverage_risk = max(0, 50 - summary["test_coverage_score"]) * 0.4
-        complexity_risk = min(50, summary["complexity_score"] * 1.5) * 0.3
-        security_risk = min(50, len(security_risks) * 5) * 0.3
+        # Quick risk score calculation including knowledge risks
+        coverage_risk = max(0, 50 - summary["test_coverage_score"]) * 0.3
+        complexity_risk = min(50, summary["complexity_score"] * 1.5) * 0.25
+        security_risk = min(50, len(security_risks) * 5) * 0.25
+        knowledge_risk = min(50, summary["knowledge_risk_score"] * 3) * 0.2  # NEW: Knowledge risk factor
         
-        summary["overall_risk_score"] = coverage_risk + complexity_risk + security_risk
+        summary["overall_risk_score"] = coverage_risk + complexity_risk + security_risk + knowledge_risk
         summary["critical_issues"] = len([r for r in security_risks if r["severity"] >= 8])
         summary["high_risk_files"] = len(complexity.get("high_complexity_files", []))
         
         return summary
-    
-    def _find_deprecated_code(self) -> List[Dict]:
-        """Find deprecated code and outdated patterns"""
-        
-        deprecated = []
-        
-        # Deprecated patterns
-        deprecated_patterns = {
-            "python": [
-                r"import imp\b",  # imp module deprecated
-                r"\.has_key\(",  # dict.has_key deprecated
-                r"execfile\(",   # execfile deprecated in Python 3
-            ],
-            "javascript": [
-                r"var\s+\w+",    # var is deprecated in favor of let/const
-                r"\.substr\(",   # substr is deprecated
-                r"escape\(",     # escape is deprecated
-            ],
-            "java": [
-                r"new Date\(\)",  # Date constructor deprecated
-                r"\.finalize\(",  # finalize deprecated
-            ]
-        }
-        
-        source_files = self.get_file_list(['.py', '.js', '.ts', '.java'])
-        
-        for file_path in source_files[:50]:  # Limit for performance
-            content = self.read_file_content(file_path)
-            if not content:
-                continue
-            
-            relative_path = str(file_path.relative_to(self.repo_path))
-            file_ext = file_path.suffix
-            
-            # Determine language
-            if file_ext == '.py':
-                patterns = deprecated_patterns["python"]
-            elif file_ext in ['.js', '.ts']:
-                patterns = deprecated_patterns["javascript"]
-            elif file_ext == '.java':
-                patterns = deprecated_patterns["java"]
-            else:
-                continue
-            
-            # Check for deprecated patterns
-            for pattern in patterns:
-                matches = re.finditer(pattern, content, re.IGNORECASE)
-                
-                for match in matches:
-                    line_num = content[:match.start()].count('\n') + 1
-                    context = self._extract_context(content, match.start(), match.end())
-                    
-                    deprecated.append({
-                        "file": relative_path,
-                        "line": line_num,
-                        "pattern": match.group(0),
-                        "context": context,
-                        "language": file_ext[1:]  # Remove the dot
-                    })
-        
-        return deprecated
-    
-    def _analyze_dependency_risks(self) -> Dict[str, Any]:
-        """Analyze dependency-related risks"""
-        
-        risks = {
-            "outdated_dependencies": [],
-            "security_vulnerabilities": [],
-            "license_issues": [],
-            "dependency_conflicts": []
-        }
-        
-        # Look for dependency files
-        dependency_files = []
-        dependency_files.extend(self.find_files_by_pattern("**/requirements.txt"))
-        dependency_files.extend(self.find_files_by_pattern("**/package.json"))
-        dependency_files.extend(self.find_files_by_pattern("**/pom.xml"))
-        dependency_files.extend(self.find_files_by_pattern("**/Gemfile"))
-        dependency_files.extend(self.find_files_by_pattern("**/composer.json"))
-        
-        for file_path in dependency_files:
-            content = self.read_file_content(file_path)
-            if not content:
-                continue
-            
-            relative_path = str(file_path.relative_to(self.repo_path))
-            
-            # Analyze based on file type
-            if file_path.name == "requirements.txt":
-                self._analyze_python_dependencies(content, relative_path, risks)
-            elif file_path.name == "package.json":
-                self._analyze_npm_dependencies(content, relative_path, risks)
-        
-        return risks
-    
-    def _analyze_python_dependencies(self, content: str, file_path: str, risks: Dict):
-        """Analyze Python dependencies for risks"""
-        
-        # Look for version pinning issues
-        lines = content.split('\n')
-        for i, line in enumerate(lines, 1):
-            line = line.strip()
-            if line and not line.startswith('#'):
-                if '==' not in line and '>=' not in line and '<=' not in line:
-                    risks["outdated_dependencies"].append({
-                        "file": file_path,
-                        "line": i,
-                        "issue": "Unpinned dependency",
-                        "dependency": line,
-                        "severity": "medium"
-                    })
-    
-    def _analyze_npm_dependencies(self, content: str, file_path: str, risks: Dict):
-        """Analyze NPM dependencies for risks"""
-        
-        try:
-            import json
-            package_data = json.loads(content)
-            
-            # Check for outdated patterns
-            dependencies = package_data.get("dependencies", {})
-            dev_dependencies = package_data.get("devDependencies", {})
-            
-            all_deps = {**dependencies, **dev_dependencies}
-            
-            for dep_name, version in all_deps.items():
-                if version.startswith("^") or version.startswith("~"):
-                    risks["outdated_dependencies"].append({
-                        "file": file_path,
-                        "issue": "Flexible version range",
-                        "dependency": f"{dep_name}@{version}",
-                        "severity": "low"
-                    })
-        
-        except json.JSONDecodeError:
-            pass
-    
-    def _calculate_file_complexity(self, content: str) -> int:
-        """Calculate a simple complexity score for a file"""
-        
-        complexity = 0
-        
-        # Count complexity indicators
-        complexity_patterns = [
-            r"\bif\b", r"\belse\b", r"\belif\b",
-            r"\bfor\b", r"\bwhile\b",
-            r"\btry\b", r"\bcatch\b", r"\bexcept\b",
-            r"\bswitch\b", r"\bcase\b",
-            r"&&", r"\|\|",
-            r"\?.*:"  # Ternary operator
-        ]
-        
-        for pattern in complexity_patterns:
-            matches = re.findall(pattern, content, re.IGNORECASE)
-            complexity += len(matches)
-        
-        # Add complexity for nested structures
-        nesting_level = 0
-        max_nesting = 0
-        
-        for line in content.split('\n'):
-            stripped = line.strip()
-            if any(keyword in stripped for keyword in ['if', 'for', 'while', 'try', 'def', 'class']):
-                nesting_level += 1
-                max_nesting = max(max_nesting, nesting_level)
-            elif stripped.startswith(('end', '}', 'else:', 'elif', 'except:', 'finally:')):
-                nesting_level = max(0, nesting_level - 1)
-        
-        complexity += max_nesting * 2
-        
-        return complexity
-    
-    def _calculate_risk_level(self, complexity: int, lines: int) -> str:
-        """Calculate risk level based on complexity and size"""
-        
-        if complexity > 30 or lines > 500:
-            return "high"
-        elif complexity > 15 or lines > 200:
-            return "medium"
-        else:
-            return "low"
-    
-    def _calculate_security_severity(self, risk_type: str) -> int:
-        """Calculate security risk severity"""
-        
-        severity_map = {
-            "sql_injection": 10,
-            "command_injection": 10,
-            "xss_vulnerability": 8,
-            "path_traversal": 7,
-            "hardcoded_secrets": 6,
-            "insecure_random": 4
-        }
-        
-        return severity_map.get(risk_type, 5)
-    
-    def _generate_risk_summary(self, test_coverage: Dict, complexity: Dict, 
-                              security_risks: List, error_handling: Dict) -> Dict[str, Any]:
-        """Generate overall risk summary"""
-        
-        summary = {
-            "overall_risk_score": 0,
-            "critical_issues": 0,
-            "high_risk_files": 0,
-            "test_coverage_score": test_coverage.get("coverage_ratio", 0) * 100,
-            "complexity_score": complexity.get("average_complexity", 0),
-            "security_issues": len(security_risks),
-            "untested_high_complexity": 0
-        }
-        
-        # Calculate overall risk score
-        risk_factors = []
-        
-        # Test coverage factor (lower coverage = higher risk)
-        coverage_risk = max(0, 100 - summary["test_coverage_score"])
-        risk_factors.append(coverage_risk * 0.3)
-        
-        # Complexity factor
-        complexity_risk = min(100, summary["complexity_score"] * 2)
-        risk_factors.append(complexity_risk * 0.2)
-        
-        # Security factor
-        security_risk = min(100, len(security_risks) * 10)
-        risk_factors.append(security_risk * 0.3)
-        
-        # Error handling factor
-        files_without_error_handling = len(error_handling.get("files_without_error_handling", []))
-        error_handling_risk = min(100, files_without_error_handling * 5)
-        risk_factors.append(error_handling_risk * 0.2)
-        
-        summary["overall_risk_score"] = sum(risk_factors)
-        
-        # Count critical issues
-        summary["critical_issues"] = len([r for r in security_risks if r["severity"] >= 8])
-        
-        # Count high-risk files
-        summary["high_risk_files"] = len(complexity.get("high_complexity_files", []))
-        
-        return summary
-    
-    def _extract_context(self, content: str, start: int, end: int, context_lines: int = 2) -> str:
-        """Extract context around a match"""
-        lines = content.split('\n')
-        match_line = content[:start].count('\n')
-        
-        start_line = max(0, match_line - context_lines)
-        end_line = min(len(lines), match_line + context_lines + 1)
-        
-        context_lines_list = lines[start_line:end_line]
-        return '\n'.join(context_lines_list)
     
     def render(self):
         """Render the risk analysis"""
@@ -990,6 +995,150 @@ class RiskAnalysisAnalyzer(BaseAnalyzer):
                 st.plotly_chart(fig_deprecated, use_container_width=True)
         else:
             st.success("No deprecated code patterns detected!")
+        
+        # Knowledge Risk Assessment - NEW FEATURE
+        st.subheader("🧠 Knowledge Risk Assessment")
+        st.markdown("Identifying single points of failure in team expertise and knowledge distribution")
+        
+        knowledge_risks = analysis.get("knowledge_risks", {})
+        
+        # Knowledge risks summary
+        if knowledge_risks:
+            summary = knowledge_risks.get("summary", {})
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Knowledge Risks", summary.get("total_risks", 0))
+            with col2:
+                st.metric("High-Risk Files", summary.get("high_risk_files", 0))
+            with col3:
+                st.metric("Contributors at Risk", summary.get("contributors_at_risk", 0))
+            
+            # Single Point of Failures
+            if knowledge_risks.get("single_point_failures"):
+                st.write("**🚨 Single Points of Failure**")
+                st.markdown("Files where only one person has worked - critical knowledge risks")
+                
+                spof_data = []
+                for risk in knowledge_risks["single_point_failures"]:
+                    spof_data.append({
+                        "File Path": risk["file"],
+                        "Primary Contributor": risk["primary_contributor"],
+                        "Commits": risk["commits"],
+                        "Risk Level": risk["risk_level"].upper(),
+                        "Risk Explanation": risk["explanation"],
+                        "Mitigation Suggestion": risk["mitigation_suggestion"]
+                    })
+                
+                spof_df = pd.DataFrame(spof_data)
+                
+                # Style the dataframe with risk level highlighting
+                def highlight_risk_level(val):
+                    if val == "HIGH":
+                        return 'background-color: #ffcccc; font-weight: bold'
+                    elif val == "MEDIUM":
+                        return 'background-color: #fff2cc; font-weight: bold'
+                    elif val == "CRITICAL":
+                        return 'background-color: #ff9999; font-weight: bold; color: darkred'
+                    else:
+                        return 'background-color: #ccffcc'
+                
+                styled_spof = spof_df.style.applymap(highlight_risk_level, subset=['Risk Level'])
+                st.dataframe(styled_spof, use_container_width=True)
+            
+            # Knowledge Silos (Technology-based)
+            if knowledge_risks.get("knowledge_silos"):
+                st.write("**🏢 Technology Knowledge Silos**")
+                st.markdown("Technology areas dominated by single contributors")
+                
+                silo_data = []
+                for risk in knowledge_risks["knowledge_silos"]:
+                    silo_data.append({
+                        "Technology": risk["technology"],
+                        "Primary Expert": risk["primary_contributor"],
+                        "Commits": risk.get("commits", risk.get("primary_commits", 0)),
+                        "Dominance %": f"{risk.get('dominance_percentage', 100):.1f}%",
+                        "Risk Level": risk["risk_level"].upper(),
+                        "Risk Explanation": risk["explanation"],
+                        "Mitigation Suggestion": risk["mitigation_suggestion"]
+                    })
+                
+                silo_df = pd.DataFrame(silo_data)
+                styled_silo = silo_df.style.applymap(highlight_risk_level, subset=['Risk Level'])
+                st.dataframe(styled_silo, use_container_width=True)
+            
+            # Bus Factor Risks
+            if knowledge_risks.get("bus_factor_risks"):
+                st.write("**🚌 Bus Factor Risks**")
+                st.markdown("Contributors critical to project success - high dependency risks")
+                
+                bus_factor_data = []
+                for risk in knowledge_risks["bus_factor_risks"]:
+                    bus_factor_data.append({
+                        "Contributor": risk.get("contributor", risk.get("primary_contributor", "")),
+                        "Primary Files": risk.get("primary_files_count", "N/A"),
+                        "Dominance %": f"{risk.get('dominance_percentage', 0):.1f}%",
+                        "Risk Level": risk["risk_level"].upper(),
+                        "Risk Explanation": risk["explanation"],
+                        "Mitigation Suggestion": risk["mitigation_suggestion"]
+                    })
+                
+                bus_df = pd.DataFrame(bus_factor_data)
+                styled_bus = bus_df.style.applymap(highlight_risk_level, subset=['Risk Level'])
+                st.dataframe(styled_bus, use_container_width=True)
+            
+            # Critical Files with Limited Knowledge
+            if knowledge_risks.get("critical_files_with_few_contributors"):
+                st.write("**📁 Critical Files with Limited Knowledge Diversity**")
+                st.markdown("Important files with few contributors - knowledge concentration risks")
+                
+                critical_data = []
+                for risk in knowledge_risks["critical_files_with_few_contributors"]:
+                    critical_data.append({
+                        "File Path": risk["file"],
+                        "Total Commits": risk["total_commits"],
+                        "Contributor Count": risk["contributor_count"],
+                        "Contributors": ", ".join(risk["contributors"]),
+                        "Risk Level": risk["risk_level"].upper(),
+                        "Risk Explanation": risk["explanation"],
+                        "Mitigation Suggestion": risk["mitigation_suggestion"]
+                    })
+                
+                critical_df = pd.DataFrame(critical_data)
+                styled_critical = critical_df.style.applymap(highlight_risk_level, subset=['Risk Level'])
+                st.dataframe(styled_critical, use_container_width=True)
+            
+            # Knowledge Risk Visualization
+            if (knowledge_risks.get("single_point_failures") or 
+                knowledge_risks.get("knowledge_silos") or 
+                knowledge_risks.get("bus_factor_risks")):
+                
+                st.write("**📊 Knowledge Risk Distribution**")
+                
+                # Create risk level distribution chart
+                all_risks = (knowledge_risks.get("single_point_failures", []) + 
+                           knowledge_risks.get("knowledge_silos", []) + 
+                           knowledge_risks.get("bus_factor_risks", []))
+                
+                if all_risks:
+                    risk_levels = [risk["risk_level"] for risk in all_risks]
+                    risk_level_counts = Counter(risk_levels)
+                    
+                    fig_knowledge_risks = px.bar(
+                        x=list(risk_level_counts.keys()),
+                        y=list(risk_level_counts.values()),
+                        title="Knowledge Risk Levels Distribution",
+                        color=list(risk_level_counts.keys()),
+                        color_discrete_map={
+                            "high": "#ff6b6b", 
+                            "medium": "#ffd93d", 
+                            "low": "#6bcf7f",
+                            "critical": "#d63031"
+                        }
+                    )
+                    st.plotly_chart(fig_knowledge_risks, use_container_width=True)
+        else:
+            st.info("No knowledge risks detected or analysis failed")
         
         # Dependency Risks
         st.subheader("📦 Dependency Risks")
