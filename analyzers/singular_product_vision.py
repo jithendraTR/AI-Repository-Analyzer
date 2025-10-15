@@ -1089,7 +1089,7 @@ class SingularProductVisionAnalyzer(BaseAnalyzer):
         
         config_analysis = analysis["configuration_consistency"]
         
-        if config_analysis["config_files"]:
+        if config_analysis.get("config_files"):
             config_df = pd.DataFrame(config_analysis["config_files"])
             
             col1, col2 = st.columns(2)
