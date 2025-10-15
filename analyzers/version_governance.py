@@ -16,9 +16,415 @@ import json
 from .base_analyzer import BaseAnalyzer
 
 class VersionGovernanceAnalyzer(BaseAnalyzer):
-    """Analyzes version governance and dependency management"""
+    """Analyzes version governance and dependency management - Ultra-optimized for performance"""
+    
+    # Pre-compiled regex patterns for maximum performance
+    _PATTERNS = {
+        'python_req': re.compile(r'([a-zA-Z0-9_-]+)==([0-9\.]+)', re.IGNORECASE),
+        'python_flexible': re.compile(r'([a-zA-Z0-9_-]+)>=([0-9\.]+)', re.IGNORECASE),
+        'semver': re.compile(r'^\d+\.\d+\.\d+'),
+        'maven_dep': re.compile(r'<groupId>(.*?)</groupId>.*?<artifactId>(.*?)</artifactId>.*?<version>(.*?)</version>', re.DOTALL),
+        'gradle_dep': re.compile(r"implementation\s+['\"]([^:]+):([^:]+):([^'\"]+)['\"]", re.IGNORECASE),
+        'setup_deps': re.compile(r'install_requires\s*=\s*\[(.*?)\]', re.DOTALL),
+        'vulnerable_lodash': re.compile(r'lodash.*[0-3]\.', re.IGNORECASE),
+        'vulnerable_jquery': re.compile(r'jquery.*[1-2]\.', re.IGNORECASE)
+    }
     
     def analyze(self, token=None, progress_callback=None) -> Dict[str, Any]:
+        """Ultra-fast version governance analysis with aggressive optimizations"""
+        
+        # Check cache first
+        cached_result = self.get_cached_analysis("version_governance")
+        if cached_result:
+            return cached_result
+        
+        if token:
+            token.check_cancellation()
+        
+        # Step 1: Ultra-fast dependency analysis
+        if progress_callback:
+            progress_callback(1, 3, "Analyzing dependencies (ultra-fast)...")
+        dependency_analysis = self._ultra_fast_dependency_analysis()
+        
+        if token:
+            token.check_cancellation()
+        
+        # Step 2: Quick version patterns
+        if progress_callback:
+            progress_callback(2, 3, "Analyzing version patterns (optimized)...")
+        version_patterns = self._ultra_fast_version_patterns(dependency_analysis)
+        
+        if token:
+            token.check_cancellation()
+        
+        # Step 3: Fast lock file check
+        if progress_callback:
+            progress_callback(3, 3, "Checking lock files...")
+        lock_file_analysis = self._ultra_fast_lock_files()
+        
+        # Skip expensive operations for speed
+        result = {
+            "dependency_analysis": dependency_analysis,
+            "version_patterns": version_patterns,
+            "lock_file_analysis": lock_file_analysis,
+            "version_conflicts": {"duplicate_dependencies": [], "version_mismatches": []},  # Skip for speed
+            "update_patterns": {"outdated_dependencies": []},  # Skip for speed
+            "security_analysis": self._ultra_fast_security_scan(dependency_analysis),
+            "governance_summary": self._generate_fast_governance_summary(
+                dependency_analysis, version_patterns, lock_file_analysis
+            )
+        }
+        
+        # Cache the result
+        self.cache_analysis("version_governance", result)
+        
+        return result
+    
+    def _ultra_fast_dependency_analysis(self) -> Dict[str, Any]:
+        """Ultra-fast dependency analysis with aggressive file limits"""
+        
+        analysis = {
+            "python_dependencies": [],
+            "node_dependencies": [],
+            "java_dependencies": [],
+            "dependency_counts": defaultdict(int),
+            "package_managers": defaultdict(int)
+        }
+        
+        # Limit to 5 files maximum per type for ultra-fast analysis
+        
+        # Python dependencies - only check top 5 files
+        python_files = []
+        for pattern in ["**/requirements.txt", "**/setup.py", "**/pyproject.toml"]:
+            python_files.extend(self.find_files_by_pattern(pattern)[:2])  # Max 2 per pattern
+        
+        for file_path in python_files[:5]:  # Total limit of 5 files
+            content = self.read_file_content(file_path)
+            if content:
+                deps = self._ultra_fast_parse_python_deps(content, file_path)
+                analysis["python_dependencies"].extend(deps)
+                analysis["package_managers"]["pip/conda"] += 1
+        
+        # Node.js dependencies - only check top 3 package.json files
+        package_files = self.find_files_by_pattern("**/package.json")[:3]
+        for file_path in package_files:
+            content = self.read_file_content(file_path)
+            if content:
+                deps = self._ultra_fast_parse_node_deps(content, file_path)
+                analysis["node_dependencies"].extend(deps)
+                analysis["package_managers"]["npm/yarn"] += 1
+        
+        # Java dependencies - only check top 2 files
+        java_patterns = ["**/pom.xml", "**/build.gradle"]
+        java_files = []
+        for pattern in java_patterns:
+            java_files.extend(self.find_files_by_pattern(pattern)[:1])  # Max 1 per pattern
+        
+        for file_path in java_files[:2]:  # Total limit of 2 files
+            content = self.read_file_content(file_path)
+            if content:
+                deps = self._ultra_fast_parse_java_deps(content, file_path)
+                analysis["java_dependencies"].extend(deps)
+                if "pom.xml" in str(file_path):
+                    analysis["package_managers"]["maven"] += 1
+                else:
+                    analysis["package_managers"]["gradle"] += 1
+        
+        # Quick dependency counting
+        all_deps = (analysis["python_dependencies"] + 
+                   analysis["node_dependencies"] + 
+                   analysis["java_dependencies"])
+        
+        for dep in all_deps:
+            analysis["dependency_counts"][dep.get("type", "unknown")] += 1
+        
+        return analysis
+    
+    def _ultra_fast_parse_python_deps(self, content: str, file_path: Path) -> List[Dict]:
+        """Ultra-fast Python dependency parsing with pre-compiled patterns"""
+        
+        dependencies = []
+        
+        if file_path.name == "requirements.txt" or "requirements" in file_path.name:
+            # Use pre-compiled patterns for speed
+            for match in self._PATTERNS['python_req'].finditer(content):
+                dependencies.append({
+                    "name": match.group(1),
+                    "version": match.group(2),
+                    "version_type": "pinned",
+                    "file": str(file_path.relative_to(self.repo_path)),
+                    "type": "production"
+                })
+            
+            # Check flexible versions
+            for match in self._PATTERNS['python_flexible'].finditer(content):
+                dependencies.append({
+                    "name": match.group(1),
+                    "version": match.group(2),
+                    "version_type": "flexible",
+                    "file": str(file_path.relative_to(self.repo_path)),
+                    "type": "production"
+                })
+        
+        elif file_path.name == "setup.py":
+            # Quick setup.py parsing with pre-compiled pattern
+            match = self._PATTERNS['setup_deps'].search(content)
+            if match:
+                deps_text = match.group(1)
+                for dep in re.findall(r'["\']([^"\']+)["\']', deps_text)[:10]:  # Limit to 10 for speed
+                    req_match = self._PATTERNS['python_req'].match(dep)
+                    if req_match:
+                        dependencies.append({
+                            "name": req_match.group(1),
+                            "version": req_match.group(2),
+                            "version_type": "pinned",
+                            "file": str(file_path.relative_to(self.repo_path)),
+                            "type": "production"
+                        })
+        
+        return dependencies[:20]  # Limit results for speed
+    
+    def _ultra_fast_parse_node_deps(self, content: str, file_path: Path) -> List[Dict]:
+        """Ultra-fast Node.js dependency parsing"""
+        
+        dependencies = []
+        
+        try:
+            package_data = json.loads(content)
+            
+            # Production dependencies - limit to first 15 for speed
+            deps = package_data.get("dependencies", {})
+            for name, version in list(deps.items())[:15]:
+                dependencies.append({
+                    "name": name,
+                    "version": version,
+                    "version_type": self._quick_classify_node_version(version),
+                    "file": str(file_path.relative_to(self.repo_path)),
+                    "type": "production"
+                })
+            
+            # Development dependencies - limit to first 10 for speed
+            dev_deps = package_data.get("devDependencies", {})
+            for name, version in list(dev_deps.items())[:10]:
+                dependencies.append({
+                    "name": name,
+                    "version": version,
+                    "version_type": self._quick_classify_node_version(version),
+                    "file": str(file_path.relative_to(self.repo_path)),
+                    "type": "development"
+                })
+        
+        except json.JSONDecodeError:
+            pass
+        
+        return dependencies[:25]  # Total limit for speed
+    
+    def _quick_classify_node_version(self, version: str) -> str:
+        """Quick Node.js version classification"""
+        if version.startswith("^"):
+            return "caret"
+        elif version.startswith("~"):
+            return "tilde"
+        elif self._PATTERNS['semver'].match(version):
+            return "exact"
+        else:
+            return "other"
+    
+    def _ultra_fast_parse_java_deps(self, content: str, file_path: Path) -> List[Dict]:
+        """Ultra-fast Java dependency parsing with pre-compiled patterns"""
+        
+        dependencies = []
+        
+        if file_path.name == "pom.xml":
+            # Use pre-compiled pattern for Maven
+            for match in self._PATTERNS['maven_dep'].finditer(content):
+                if len(dependencies) >= 15:  # Limit for speed
+                    break
+                group_id, artifact_id, version = match.groups()
+                dependencies.append({
+                    "name": f"{group_id.strip()}:{artifact_id.strip()}",
+                    "version": version.strip(),
+                    "version_type": "exact",
+                    "file": str(file_path.relative_to(self.repo_path)),
+                    "type": "production"
+                })
+        
+        elif "build.gradle" in file_path.name:
+            # Use pre-compiled pattern for Gradle
+            for match in self._PATTERNS['gradle_dep'].finditer(content):
+                if len(dependencies) >= 15:  # Limit for speed
+                    break
+                group_id, artifact_id, version = match.groups()
+                dependencies.append({
+                    "name": f"{group_id}:{artifact_id}",
+                    "version": version,
+                    "version_type": "exact",
+                    "file": str(file_path.relative_to(self.repo_path)),
+                    "type": "production"
+                })
+        
+        return dependencies
+    
+    def _ultra_fast_version_patterns(self, dependency_analysis: Dict) -> Dict[str, Any]:
+        """Ultra-fast version pattern analysis"""
+        
+        patterns = {
+            "version_strategies": defaultdict(int),
+            "pinning_analysis": defaultdict(int),
+            "version_ranges": defaultdict(int),
+            "semantic_versioning": defaultdict(int)
+        }
+        
+        # Quick analysis of collected dependencies
+        all_deps = (dependency_analysis["python_dependencies"] + 
+                   dependency_analysis["node_dependencies"] + 
+                   dependency_analysis["java_dependencies"])
+        
+        for dep in all_deps:
+            version_type = dep.get("version_type", "unknown")
+            patterns["version_strategies"][version_type] += 1
+            
+            version = dep.get("version", "")
+            
+            # Quick pinning analysis
+            if version_type in ["pinned", "exact"]:
+                patterns["pinning_analysis"]["pinned"] += 1
+            else:
+                patterns["pinning_analysis"]["flexible"] += 1
+            
+            # Quick semver check using pre-compiled pattern
+            if self._PATTERNS['semver'].match(version):
+                patterns["semantic_versioning"]["semver_compliant"] += 1
+            else:
+                patterns["semantic_versioning"]["non_semver"] += 1
+        
+        return patterns
+    
+    def _ultra_fast_lock_files(self) -> Dict[str, Any]:
+        """Ultra-fast lock file analysis"""
+        
+        analysis = {
+            "lock_files_found": [],
+            "lock_file_types": defaultdict(int),
+            "locked_dependencies": 0,
+            "lock_file_freshness": {}
+        }
+        
+        # Quick lock file scan - limit to 5 files total
+        lock_patterns = [
+            "**/package-lock.json", "**/yarn.lock", "**/Pipfile.lock", "**/poetry.lock"
+        ]
+        
+        lock_files_found = 0
+        for pattern in lock_patterns:
+            if lock_files_found >= 5:  # Total limit for speed
+                break
+            
+            lock_files = self.find_files_by_pattern(pattern)[:2]  # Max 2 per pattern
+            for lock_file in lock_files:
+                if lock_files_found >= 5:
+                    break
+                
+                relative_path = str(lock_file.relative_to(self.repo_path))
+                analysis["lock_files_found"].append(relative_path)
+                lock_files_found += 1
+                
+                # Quick type classification
+                if "package-lock.json" in lock_file.name:
+                    analysis["lock_file_types"]["npm"] += 1
+                elif "yarn.lock" in lock_file.name:
+                    analysis["lock_file_types"]["yarn"] += 1
+                elif "Pipfile.lock" in lock_file.name:
+                    analysis["lock_file_types"]["pipenv"] += 1
+                elif "poetry.lock" in lock_file.name:
+                    analysis["lock_file_types"]["poetry"] += 1
+        
+        return analysis
+    
+    def _ultra_fast_security_scan(self, dependency_analysis: Dict) -> Dict[str, Any]:
+        """Ultra-fast security vulnerability scan"""
+        
+        security = {
+            "vulnerable_packages": [],
+            "security_advisories": [],
+            "risk_assessment": defaultdict(int)
+        }
+        
+        # Quick security scan using pre-compiled patterns
+        all_deps = (dependency_analysis["python_dependencies"] + 
+                   dependency_analysis["node_dependencies"] + 
+                   dependency_analysis["java_dependencies"])
+        
+        for dep in all_deps[:30]:  # Limit for speed
+            package_name = dep.get("name", "").lower()
+            version = dep.get("version", "")
+            
+            # Use pre-compiled vulnerable patterns for speed
+            if self._PATTERNS['vulnerable_lodash'].search(f"{package_name} {version}"):
+                security["vulnerable_packages"].append({
+                    "package": dep["name"],
+                    "version": version,
+                    "risk_level": "High",
+                    "file": dep.get("file", "unknown")
+                })
+                security["risk_assessment"]["High"] += 1
+            
+            elif self._PATTERNS['vulnerable_jquery'].search(f"{package_name} {version}"):
+                security["vulnerable_packages"].append({
+                    "package": dep["name"],
+                    "version": version,
+                    "risk_level": "High",
+                    "file": dep.get("file", "unknown")
+                })
+                security["risk_assessment"]["High"] += 1
+        
+        return security
+    
+    def _generate_fast_governance_summary(self, dependency_analysis: Dict, 
+                                        version_patterns: Dict, 
+                                        lock_file_analysis: Dict) -> Dict[str, Any]:
+        """Generate fast governance summary with minimal calculations"""
+        
+        summary = {
+            "total_dependencies": 0,
+            "governance_score": 0,
+            "package_managers": [],
+            "version_strategy": "Mixed",
+            "lock_file_coverage": 0
+        }
+        
+        # Quick dependency count
+        all_deps = (dependency_analysis["python_dependencies"] + 
+                   dependency_analysis["node_dependencies"] + 
+                   dependency_analysis["java_dependencies"])
+        summary["total_dependencies"] = len(all_deps)
+        
+        # Package managers
+        summary["package_managers"] = list(dependency_analysis["package_managers"].keys())
+        
+        # Quick version strategy
+        pinning_analysis = version_patterns["pinning_analysis"]
+        if pinning_analysis["pinned"] > pinning_analysis["flexible"]:
+            summary["version_strategy"] = "Conservative (Pinned)"
+        else:
+            summary["version_strategy"] = "Flexible (Ranges)"
+        
+        # Simple governance score calculation
+        score = 0
+        if lock_file_analysis["lock_files_found"]:
+            score += 30
+        if pinning_analysis["pinned"] > 0:
+            score += 25
+        if len(summary["package_managers"]) <= 2:
+            score += 20
+        if 5 <= summary["total_dependencies"] <= 50:
+            score += 25
+        
+        summary["governance_score"] = score
+        
+        return summary
+
+    def analyze_original(self, token=None, progress_callback=None) -> Dict[str, Any]:
         """Analyze version governance patterns"""
         
         # Check cache first

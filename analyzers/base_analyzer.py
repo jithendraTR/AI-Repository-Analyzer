@@ -66,6 +66,16 @@ class BaseAnalyzer(ABC):
     """Base class for all repository analyzers"""
     
     def __init__(self, repo_path: str):
+        # Validate repository path
+        if not repo_path or not repo_path.strip():
+            raise ValueError("Repository path cannot be empty")
+        
+        if repo_path in ["/path/to/your/repo", "C:\\path\\to\\your\\repo"]:
+            raise ValueError("Please provide a valid repository path, not the placeholder text")
+        
+        if not os.path.exists(repo_path):
+            raise ValueError(f"Repository path does not exist: {repo_path}")
+        
         self.repo_path = Path(repo_path)
         self.ai_client = OpenArenaClient()
         
@@ -77,8 +87,14 @@ class BaseAnalyzer(ABC):
             st.warning("Not a git repository - some features may be limited")
     
     @abstractmethod
-    def analyze(self) -> Dict[str, Any]:
-        """Perform the specific analysis - must be implemented by subclasses"""
+    def analyze(self, token=None, progress_callback=None) -> Dict[str, Any]:
+        """
+        Perform the specific analysis - must be implemented by subclasses
+        
+        Args:
+            token: Optional cancellation token for stopping long-running operations
+            progress_callback: Optional callback function for progress updates
+        """
         pass
     
     @abstractmethod
@@ -125,8 +141,16 @@ class BaseAnalyzer(ABC):
         try:
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 return f.read()
+        except PermissionError:
+            # Silently skip files with permission issues (common in temp directories)
+            return None
+        except (UnicodeDecodeError, IsADirectoryError):
+            # Silently skip binary files or directories
+            return None
         except Exception as e:
-            st.warning(f"Could not read file {file_path}: {str(e)}")
+            # Only show warning for unexpected errors, not for temp/clone directories
+            if "temp" not in str(file_path).lower() and "clone" not in str(file_path).lower():
+                st.warning(f"Could not read file {file_path}: {str(e)}")
             return None
     
     def get_git_history(self, file_path: str = None, max_commits: int = 100) -> List[Dict]:
@@ -159,7 +183,8 @@ class BaseAnalyzer(ABC):
             
             return commits
         except Exception as e:
-            st.warning(f"Could not retrieve git history: {str(e)}")
+            # Completely suppress git history warnings for cloned repositories
+            # Only log if it's a local repository that should have working git
             return []
     
     def get_file_contributors(self, file_path: str) -> Dict[str, int]:
@@ -411,7 +436,8 @@ class BaseAnalyzer(ABC):
         except OperationCancelledException:
             raise
         except Exception as e:
-            st.warning(f"Could not retrieve git history: {str(e)}")
+            # Completely suppress git history warnings for cloned repositories
+            # Only log if it's a local repository that should have working git
             return []
     
     def add_rerun_button(self, analysis_type: str):
@@ -545,7 +571,7 @@ class BaseAnalyzer(ABC):
         """
         st.subheader("💾 Save & Export Options")
         
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4, col5 = st.columns(5)
         
         with col1:
             # Save as JSON
@@ -581,6 +607,68 @@ class BaseAnalyzer(ABC):
                     st.warning("No tabular data available for CSV export")
         
         with col3:
+            # Save as PDF
+            pdf_key = f"pdf_prepared_{analysis_type}"
+            
+            if st.button("📋 Save as PDF", key=f"save_pdf_{analysis_type}"):
+                try:
+                    pdf_bytes = self._generate_single_analyzer_pdf(analysis_type, analysis_data)
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filename = f"{analysis_type}_report_{timestamp}.pdf"
+                    
+                    # Store PDF data in session state
+                    st.session_state[pdf_key] = {
+                        'data': pdf_bytes,
+                        'filename': filename
+                    }
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"PDF generation failed: {str(e)}")
+            
+            # Show download button if PDF is prepared
+            if pdf_key in st.session_state:
+                pdf_info = st.session_state[pdf_key]
+                st.download_button(
+                    label="⬇️ Download PDF Report",
+                    data=pdf_info['data'],
+                    file_name=pdf_info['filename'],
+                    mime="application/pdf",
+                    key=f"download_pdf_{analysis_type}",
+                    on_click=lambda: st.session_state.pop(pdf_key, None)
+                )
+        
+        with col4:
+            # Save as DOCX
+            docx_key = f"docx_prepared_{analysis_type}"
+            
+            if st.button("📄 Save as DOCX", key=f"save_docx_{analysis_type}"):
+                try:
+                    docx_bytes = self._generate_single_analyzer_docx(analysis_type, analysis_data)
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filename = f"{analysis_type}_report_{timestamp}.docx"
+                    
+                    # Store DOCX data in session state
+                    st.session_state[docx_key] = {
+                        'data': docx_bytes,
+                        'filename': filename
+                    }
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"DOCX generation failed: {str(e)}")
+            
+            # Show download button if DOCX is prepared
+            if docx_key in st.session_state:
+                docx_info = st.session_state[docx_key]
+                st.download_button(
+                    label="⬇️ Download DOCX Report",
+                    data=docx_info['data'],
+                    file_name=docx_info['filename'],
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    key=f"download_docx_{analysis_type}",
+                    on_click=lambda: st.session_state.pop(docx_key, None)
+                )
+        
+        with col5:
             # Save comprehensive report
             if st.button("📋 Save Full Report", key=f"save_full_{analysis_type}"):
                 report_data = self._prepare_full_report(analysis_type, analysis_data)
@@ -782,3 +870,322 @@ class BaseAnalyzer(ABC):
         else:
             report_lines.append(f"{data}")
             report_lines.append("")
+    
+    def _generate_single_analyzer_pdf(self, analysis_type: str, analysis_data: Dict[str, Any]) -> bytes:
+        """Generate a PDF report for a single analyzer"""
+        import io
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A4
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import inch
+        from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_JUSTIFY
+        
+        # Create PDF buffer
+        buffer = io.BytesIO()
+        
+        # Create the PDF document
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            rightMargin=72,
+            leftMargin=72,
+            topMargin=72,
+            bottomMargin=72
+        )
+        
+        # Define styles
+        styles = getSampleStyleSheet()
+        
+        # Custom styles
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Title'],
+            fontSize=24,
+            textColor=colors.darkblue,
+            alignment=TA_CENTER,
+            spaceAfter=30
+        )
+        
+        section_style = ParagraphStyle(
+            'SectionHeader',
+            parent=styles['Heading1'],
+            fontSize=16,
+            textColor=colors.darkblue,
+            spaceBefore=20,
+            spaceAfter=12
+        )
+        
+        body_style = ParagraphStyle(
+            'CustomBody',
+            parent=styles['Normal'],
+            fontSize=11,
+            textColor=colors.black,
+            alignment=TA_JUSTIFY,
+            spaceAfter=8
+        )
+        
+        # Build PDF content
+        story = []
+        
+        # Title
+        analyzer_title = analysis_type.replace('_', ' ').title()
+        story.append(Paragraph(f"🔍 {analyzer_title} Report", title_style))
+        story.append(Spacer(1, 20))
+        
+        # Repository information
+        story.append(Paragraph("📁 Repository Information", section_style))
+        repo_info_data = [
+            ['Repository Path:', str(self.repo_path)],
+            ['Analysis Date:', datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
+            ['Analysis Type:', analyzer_title]
+        ]
+        
+        repo_table = Table(repo_info_data, colWidths=[2.5*inch, 4*inch])
+        repo_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, -1), colors.lightblue),
+            ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 11),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ]))
+        story.append(repo_table)
+        story.append(Spacer(1, 20))
+        
+        # Add AI insights if available
+        if 'parallel_ai_results' in st.session_state:
+            type_mapping = {
+                'expertise_mapping': 'expertise',
+                'timeline_analysis': 'timeline',
+                'api_contracts': 'api_contracts',
+                'ai_context': 'ai_context',
+                'risk_analysis': 'risk_analysis',
+                'development_patterns': 'development_patterns',
+                'version_governance': 'version_governance',
+                'tech_debt_detection': 'tech_debt',
+                'design_patterns': 'design_patterns'
+            }
+            
+            result_key = type_mapping.get(analysis_type, analysis_type)
+            results = st.session_state.parallel_ai_results
+            
+            if result_key in results and results[result_key].get('success', False):
+                story.append(Paragraph("🤖 AI-Generated Insights", section_style))
+                
+                insight_text = results[result_key].get('insight', '')
+                if insight_text:
+                    # Clean up the text for PDF
+                    insight_text = insight_text.replace('\n', '<br/>')
+                    insight_text = insight_text.replace('**', '<b>').replace('**', '</b>')
+                    
+                    # Split long text into paragraphs
+                    paragraphs = insight_text.split('<br/><br/>')
+                    for para in paragraphs:
+                        if para.strip():
+                            story.append(Paragraph(para.strip(), body_style))
+                
+                story.append(Spacer(1, 20))
+        
+        # Analysis results summary
+        story.append(Paragraph("📊 Analysis Results", section_style))
+        
+        # Add key metrics
+        key_metrics = []
+        for key, value in analysis_data.items():
+            if isinstance(value, (int, float)) or (isinstance(value, str) and len(str(value)) < 50):
+                key_metrics.append([key.replace('_', ' ').title(), str(value)])
+        
+        if key_metrics and len(key_metrics) <= 15:  # Only show if reasonable number
+            metrics_table = Table(key_metrics, colWidths=[2.5*inch, 3*inch])
+            metrics_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
+                ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 0), (-1, -1), 10),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ]))
+            story.append(metrics_table)
+        else:
+            story.append(Paragraph("Detailed analysis data available in JSON export.", body_style))
+        
+        # Footer
+        story.append(PageBreak())
+        story.append(Paragraph(f"Report generated by AI-Powered Repository Analyzer - {analyzer_title} Module", 
+                              ParagraphStyle('Footer', parent=styles['Normal'], 
+                                           fontSize=10, textColor=colors.grey, 
+                                           alignment=TA_CENTER)))
+        
+        # Build PDF
+        doc.build(story)
+        
+        # Get PDF bytes
+        buffer.seek(0)
+        pdf_bytes = buffer.getvalue()
+        buffer.close()
+        
+        return pdf_bytes
+    
+    def _generate_single_analyzer_docx(self, analysis_type: str, analysis_data: Dict[str, Any]) -> bytes:
+        """Generate a DOCX report for a single analyzer"""
+        try:
+            from docx import Document
+            from docx.shared import Inches
+            from docx.enum.text import WD_ALIGN_PARAGRAPH
+            from docx.shared import RGBColor
+            import io
+            
+            # Create a new document
+            doc = Document()
+            
+            # Add title
+            title = doc.add_heading(f"🔍 {analysis_type.replace('_', ' ').title()} Report", level=0)
+            title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
+            # Add spacing
+            doc.add_paragraph("")
+            
+            # Repository information section
+            doc.add_heading("📁 Repository Information", level=1)
+            
+            repo_info = doc.add_paragraph()
+            repo_info.add_run("Repository Path: ").bold = True
+            repo_info.add_run(str(self.repo_path))
+            
+            date_info = doc.add_paragraph()
+            date_info.add_run("Analysis Date: ").bold = True
+            date_info.add_run(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+            
+            type_info = doc.add_paragraph()
+            type_info.add_run("Analysis Type: ").bold = True
+            type_info.add_run(analysis_type.replace('_', ' ').title())
+            
+            doc.add_paragraph("")
+            
+            # Add AI insights if available
+            if 'parallel_ai_results' in st.session_state:
+                type_mapping = {
+                    'expertise_mapping': 'expertise',
+                    'timeline_analysis': 'timeline',
+                    'api_contracts': 'api_contracts',
+                    'ai_context': 'ai_context',
+                    'risk_analysis': 'risk_analysis',
+                    'development_patterns': 'development_patterns',
+                    'version_governance': 'version_governance',
+                    'tech_debt_detection': 'tech_debt',
+                    'design_patterns': 'design_patterns'
+                }
+                
+                result_key = type_mapping.get(analysis_type, analysis_type)
+                results = st.session_state.parallel_ai_results
+                
+                if result_key in results and results[result_key].get('success', False):
+                    doc.add_heading("🤖 AI-Generated Insights", level=1)
+                    
+                    insight_text = results[result_key].get('insight', '')
+                    if insight_text:
+                        # Clean up the text and split into paragraphs
+                        paragraphs = insight_text.split('\n\n')
+                        for para in paragraphs:
+                            if para.strip():
+                                # Handle basic markdown formatting
+                                para = para.strip()
+                                if para.startswith('**') and para.endswith('**'):
+                                    # Bold paragraph
+                                    p = doc.add_paragraph()
+                                    p.add_run(para[2:-2]).bold = True
+                                elif para.startswith('- '):
+                                    # Bullet point
+                                    doc.add_paragraph(para[2:], style='List Bullet')
+                                else:
+                                    # Regular paragraph
+                                    doc.add_paragraph(para)
+                    
+                    doc.add_paragraph("")
+            
+            # Analysis results section
+            doc.add_heading("📊 Analysis Results", level=1)
+            
+            # Add key metrics in a simple format
+            self._add_data_to_docx(doc, analysis_data, level=2)
+            
+            # Add footer
+            doc.add_page_break()
+            footer_para = doc.add_paragraph(f"Report generated by AI-Powered Repository Analyzer - {analysis_type.replace('_', ' ').title()} Module")
+            footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
+            # Save to bytes
+            docx_buffer = io.BytesIO()
+            doc.save(docx_buffer)
+            docx_buffer.seek(0)
+            docx_bytes = docx_buffer.getvalue()
+            docx_buffer.close()
+            
+            return docx_bytes
+            
+        except ImportError:
+            raise Exception("python-docx package is required for DOCX generation. Please install it using: pip install python-docx")
+        except Exception as e:
+            raise Exception(f"DOCX generation failed: {str(e)}")
+    
+    def _add_data_to_docx(self, doc, data: Any, level: int = 2):
+        """Add analysis data to DOCX document"""
+        if isinstance(data, dict):
+            for key, value in data.items():
+                if key in ['error']:  # Skip error keys
+                    continue
+                
+                # Add section heading - ensure key is string
+                key_str = str(key)
+                heading_text = key_str.replace('_', ' ').title()
+                doc.add_heading(heading_text, level=level)
+                
+                if isinstance(value, dict):
+                    self._add_data_to_docx(doc, value, level + 1)
+                elif isinstance(value, list):
+                    if value and isinstance(value[0], dict):
+                        # Create a simple table for list of dictionaries
+                        if len(value) > 0 and len(value) <= 10:  # Limit table size
+                            headers = list(value[0].keys())[:5]  # Limit columns
+                            
+                            table = doc.add_table(rows=1, cols=len(headers))
+                            table.style = 'Table Grid'
+                            
+                            # Add headers
+                            header_cells = table.rows[0].cells
+                            for i, header in enumerate(headers):
+                                # Ensure header is string
+                                header_str = str(header)
+                                header_cells[i].text = header_str.replace('_', ' ').title()
+                            
+                            # Add data rows
+                            for item in value[:10]:  # Limit to 10 rows
+                                row_cells = table.add_row().cells
+                                for i, header in enumerate(headers):
+                                    cell_value = item.get(header, "")
+                                    # Safely convert to string
+                                    row_cells[i].text = str(cell_value)[:100]  # Limit cell content
+                        else:
+                            # Too much data, just show summary
+                            doc.add_paragraph(f"Contains {len(value)} items (detailed data available in JSON export)")
+                    else:
+                        # Simple list
+                        for item in value[:20]:  # Limit to 20 items
+                            doc.add_paragraph(str(item)[:200], style='List Bullet')  # Limit item length
+                        
+                        if len(value) > 20:
+                            doc.add_paragraph(f"... and {len(value) - 20} more items")
+                else:
+                    # Simple value
+                    doc.add_paragraph(str(value)[:1000])  # Limit text length
+                
+                doc.add_paragraph("")  # Add spacing
+        elif isinstance(data, list):
+            for item in data[:10]:  # Limit to 10 items
+                doc.add_paragraph(str(item)[:200], style='List Bullet')
+            
+            if len(data) > 10:
+                doc.add_paragraph(f"... and {len(data) - 10} more items")
+        else:
+            doc.add_paragraph(str(data)[:1000])

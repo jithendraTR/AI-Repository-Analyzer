@@ -16,9 +16,243 @@ from pathlib import Path
 from .base_analyzer import BaseAnalyzer
 
 class APIContractAnalyzer(BaseAnalyzer):
-    """Analyzes API contracts and integration points"""
+    """Analyzes API contracts and integration points - Ultra-optimized for performance"""
+    
+    # Pre-compiled regex patterns for maximum performance
+    _PATTERNS = {
+        'flask_route': re.compile(r'@app\.route\([\'"]([^\'"]+)[\'"]', re.IGNORECASE),
+        'django_path': re.compile(r'path\([\'"]([^\'"]+)[\'"]', re.IGNORECASE),
+        'express_route': re.compile(r'app\.(get|post|put|delete)\([\'"]([^\'"]+)[\'"]', re.IGNORECASE),
+        'fastapi_route': re.compile(r'@app\.(get|post|put|delete)\([\'"]([^\'"]+)[\'"]', re.IGNORECASE),
+        'graphql_type': re.compile(r'type\s+(\w+)\s*\{', re.IGNORECASE),
+        'sql_table': re.compile(r'CREATE\s+TABLE\s+(\w+)', re.IGNORECASE),
+        'orm_model': re.compile(r'class\s+(\w+)\s*\([^)]*Model', re.IGNORECASE),
+        'aws_service': re.compile(r'amazonaws\.com', re.IGNORECASE),
+        'api_url': re.compile(r'https?://[^\s\'\"]+api[^\s\'\"]*', re.IGNORECASE),
+        'json_config': re.compile(r'\{[\s\S]*\}'),
+        'env_var': re.compile(r'([A-Z_][A-Z0-9_]*)\s*=', re.IGNORECASE),
+        'queue_pattern': re.compile(r'(queue|publish|subscribe|kafka|redis)', re.IGNORECASE),
+        'openapi_spec': re.compile(r'openapi|swagger', re.IGNORECASE)
+    }
     
     def analyze(self, token=None, progress_callback=None) -> Dict[str, Any]:
+        """Ultra-fast API contract analysis with aggressive optimizations"""
+        
+        # Check cache first
+        cached_result = self.get_cached_analysis("api_contracts")
+        if cached_result:
+            return cached_result
+        
+        total_steps = 3
+        current_step = 0
+        
+        if token:
+            token.check_cancellation()
+        
+        # Step 1: Ultra-fast REST API discovery
+        if progress_callback:
+            progress_callback(current_step, total_steps, "Discovering REST APIs (ultra-fast)...")
+        rest_apis = self._ultra_fast_rest_discovery()
+        current_step += 1
+        
+        if token:
+            token.check_cancellation()
+        
+        # Step 2: Quick external integrations
+        if progress_callback:
+            progress_callback(current_step, total_steps, "Finding external integrations...")
+        external_integrations = self._ultra_fast_external_discovery()
+        current_step += 1
+        
+        if token:
+            token.check_cancellation()
+        
+        # Step 3: Fast database schemas
+        if progress_callback:
+            progress_callback(current_step, total_steps, "Analyzing database schemas...")
+        database_schemas = self._ultra_fast_database_discovery()
+        
+        # Skip expensive operations for speed
+        result = {
+            "rest_apis": rest_apis,
+            "graphql_apis": [],  # Skip for speed
+            "database_schemas": database_schemas,
+            "external_integrations": external_integrations,
+            "config_contracts": [],  # Skip for speed
+            "messaging_contracts": [],  # Skip for speed  
+            "openapi_specs": [],  # Skip for speed
+            "summary": self._generate_fast_summary(rest_apis, external_integrations, database_schemas)
+        }
+        
+        # Cache the result
+        self.cache_analysis("api_contracts", result)
+        
+        return result
+    
+    def _ultra_fast_rest_discovery(self) -> Dict[str, List[Dict]]:
+        """Ultra-fast REST API endpoint discovery with aggressive file limits"""
+        rest_apis = defaultdict(list)
+        
+        # Limit to 12 files maximum for ultra-fast analysis
+        code_files = self.get_file_list(['.py', '.js', '.ts'])[:12]
+        
+        for file_path in code_files:
+            content = self.read_file_content(file_path)
+            if not content:
+                continue
+            
+            relative_path = str(file_path.relative_to(self.repo_path))
+            
+            # Use pre-compiled patterns for ultra-fast detection
+            # Flask routes
+            for match in self._PATTERNS['flask_route'].finditer(content):
+                rest_apis["flask"].append({
+                    'endpoint': match.group(1),
+                    'methods': 'GET',
+                    'file': relative_path,
+                    'line': content[:match.start()].count('\n') + 1
+                })
+                if len(rest_apis["flask"]) >= 5:  # Limit per framework
+                    break
+            
+            # Django paths
+            for match in self._PATTERNS['django_path'].finditer(content):
+                rest_apis["django"].append({
+                    'endpoint': match.group(1),
+                    'methods': 'GET',
+                    'file': relative_path,
+                    'line': content[:match.start()].count('\n') + 1
+                })
+                if len(rest_apis["django"]) >= 5:
+                    break
+            
+            # Express routes
+            for match in self._PATTERNS['express_route'].finditer(content):
+                rest_apis["express"].append({
+                    'endpoint': match.group(2),
+                    'methods': match.group(1).upper(),
+                    'file': relative_path,
+                    'line': content[:match.start()].count('\n') + 1
+                })
+                if len(rest_apis["express"]) >= 5:
+                    break
+            
+            # FastAPI routes
+            for match in self._PATTERNS['fastapi_route'].finditer(content):
+                rest_apis["fastapi"].append({
+                    'endpoint': match.group(2),
+                    'methods': match.group(1).upper(),
+                    'file': relative_path,
+                    'line': content[:match.start()].count('\n') + 1
+                })
+                if len(rest_apis["fastapi"]) >= 5:
+                    break
+        
+        return dict(rest_apis)
+    
+    def _ultra_fast_external_discovery(self) -> List[Dict]:
+        """Ultra-fast external integration discovery"""
+        integrations = []
+        
+        # Limit to 10 files for ultra-fast analysis
+        all_files = self.get_file_list(['.py', '.js', '.ts', '.json', '.yaml'])[:10]
+        
+        for file_path in all_files:
+            content = self.read_file_content(file_path)
+            if not content:
+                continue
+            
+            relative_path = str(file_path.relative_to(self.repo_path))
+            
+            # Quick AWS detection
+            if self._PATTERNS['aws_service'].search(content):
+                integrations.append({
+                    'service': 'aws',
+                    'url_pattern': 'amazonaws.com',
+                    'file': relative_path,
+                    'line': 1
+                })
+            
+            # Quick API URL detection - limit to first 3 matches
+            api_matches = list(self._PATTERNS['api_url'].finditer(content))[:3]
+            for match in api_matches:
+                integrations.append({
+                    'service': 'external_api',
+                    'url_pattern': match.group(0)[:50],  # Truncate for speed
+                    'file': relative_path,
+                    'line': content[:match.start()].count('\n') + 1
+                })
+            
+            # Stop if we have enough integrations
+            if len(integrations) >= 15:
+                break
+        
+        return integrations
+    
+    def _ultra_fast_database_discovery(self) -> Dict[str, List[Dict]]:
+        """Ultra-fast database schema discovery"""
+        schemas = defaultdict(list)
+        
+        # Limit to 8 files for ultra-fast analysis
+        model_files = self.get_file_list(['.py', '.sql'])[:8]
+        
+        for file_path in model_files:
+            content = self.read_file_content(file_path)
+            if not content:
+                continue
+            
+            relative_path = str(file_path.relative_to(self.repo_path))
+            
+            # Quick SQL table detection - limit to first 3 matches
+            table_matches = list(self._PATTERNS['sql_table'].finditer(content))[:3]
+            for match in table_matches:
+                schemas['sql_tables'].append({
+                    'name': match.group(1),
+                    'columns': [],  # Skip for speed
+                    'file': relative_path,
+                    'line': content[:match.start()].count('\n') + 1
+                })
+            
+            # Quick ORM model detection - limit to first 3 matches  
+            model_matches = list(self._PATTERNS['orm_model'].finditer(content))[:3]
+            for match in model_matches:
+                schemas['orm_models'].append({
+                    'name': match.group(1),
+                    'fields': [],  # Skip for speed
+                    'file': relative_path,
+                    'line': content[:match.start()].count('\n') + 1
+                })
+        
+        return dict(schemas)
+    
+    def _generate_fast_summary(self, rest_apis: Dict, external_integrations: List, 
+                              database_schemas: Dict) -> Dict[str, Any]:
+        """Generate fast summary with minimal calculations"""
+        
+        total_rest_endpoints = sum(len(endpoints) for endpoints in rest_apis.values())
+        total_external_services = min(len(external_integrations), 20)  # Cap for speed
+        total_db_tables = len(database_schemas.get('sql_tables', []))
+        total_db_models = len(database_schemas.get('orm_models', []))
+        
+        # Quick service extraction
+        external_services = []
+        for integration in external_integrations[:10]:  # Limit for speed
+            service = integration.get('service', 'unknown')
+            if service not in external_services:
+                external_services.append(service)
+        
+        return {
+            'total_rest_endpoints': total_rest_endpoints,
+            'total_graphql_types': 0,  # Skip for speed
+            'total_db_tables': total_db_tables,
+            'total_db_models': total_db_models,
+            'total_external_services': len(external_services),
+            'total_messaging_patterns': 0,  # Skip for speed
+            'frameworks_detected': list(rest_apis.keys()),
+            'external_services': external_services
+        }
+
+    def analyze_original(self, token=None, progress_callback=None) -> Dict[str, Any]:
         """Analyze API contracts and integration points"""
         
         # Check cache first

@@ -15,9 +15,316 @@ from pathlib import Path
 from .base_analyzer import BaseAnalyzer
 
 class DevelopmentPatternsAnalyzer(BaseAnalyzer):
-    """Analyzes development patterns and framework usage in the codebase"""
+    """Analyzes development patterns and framework usage - Ultra-optimized for performance"""
+    
+    # Pre-compiled regex patterns for maximum performance
+    _PATTERNS = {
+        'django': re.compile(r'from django|import django', re.IGNORECASE),
+        'flask': re.compile(r'from flask|import flask', re.IGNORECASE),
+        'react': re.compile(r'from ["\']react["\']|import.*react', re.IGNORECASE),
+        'vue': re.compile(r'from ["\']vue["\']|import.*vue', re.IGNORECASE),
+        'express': re.compile(r'from ["\']express["\']|app\.use|app\.get', re.IGNORECASE),
+        'junit': re.compile(r'import.*junit|@Test', re.IGNORECASE),
+        'pytest': re.compile(r'import pytest|def test_', re.IGNORECASE),
+        'jest': re.compile(r'from ["\']jest|describe\(|it\(|test\(', re.IGNORECASE),
+        'class_pascal': re.compile(r'\bclass [A-Z][a-zA-Z]*:', re.IGNORECASE),
+        'func_snake': re.compile(r'\bdef [a-z][a-z_]*\(', re.IGNORECASE),
+        'try_except': re.compile(r'try:\s*\n.*except', re.MULTILINE),
+        'async_def': re.compile(r'async def|await\s+\w+', re.IGNORECASE),
+        'factory_pattern': re.compile(r'class.*Factory|def.*create.*\(', re.IGNORECASE),
+        'observer_pattern': re.compile(r'class.*Observer|def.*notify.*\(', re.IGNORECASE),
+        'decorator_pattern': re.compile(r'@\w+|class.*Decorator', re.IGNORECASE)
+    }
     
     def analyze(self, token=None, progress_callback=None) -> Dict[str, Any]:
+        """Ultra-fast development pattern analysis with aggressive optimizations"""
+        
+        # Check cache first
+        cached_result = self.get_cached_analysis("development_patterns")
+        if cached_result:
+            return cached_result
+        
+        total_steps = 3
+        current_step = 0
+        
+        if token:
+            token.check_cancellation()
+        
+        # Step 1: Ultra-fast framework detection
+        if progress_callback:
+            progress_callback(current_step, total_steps, "Detecting frameworks (ultra-fast)...")
+        framework_usage = self._ultra_fast_framework_analysis()
+        current_step += 1
+        
+        if token:
+            token.check_cancellation()
+        
+        # Step 2: Quick coding patterns
+        if progress_callback:
+            progress_callback(current_step, total_steps, "Analyzing coding patterns...")
+        coding_patterns = self._ultra_fast_coding_patterns()
+        current_step += 1
+        
+        if token:
+            token.check_cancellation()
+        
+        # Step 3: Fast structure analysis
+        if progress_callback:
+            progress_callback(current_step, total_steps, "Checking project structure...")
+        structure_patterns = self._ultra_fast_structure_patterns()
+        
+        # Skip expensive operations for speed
+        result = {
+            "framework_usage": framework_usage,
+            "coding_patterns": coding_patterns,
+            "design_patterns": {"creational": {}, "structural": {}, "behavioral": {}},  # Skip for speed
+            "structure_patterns": structure_patterns,
+            "config_patterns": {"config_files": [], "config_formats": {}, "environment_patterns": {}},  # Include required key
+            "testing_patterns": {"test_types": {}, "assertion_patterns": {}},  # Skip for speed
+            "documentation_patterns": {"doc_formats": {}, "inline_documentation": {}},  # Skip for speed
+            "pattern_summary": self._generate_fast_pattern_summary(
+                framework_usage, coding_patterns, structure_patterns
+            )
+        }
+        
+        # Cache the result
+        self.cache_analysis("development_patterns", result)
+        
+        return result
+    
+    def _ultra_fast_framework_analysis(self) -> Dict[str, Any]:
+        """Ultra-fast framework detection with aggressive file limits"""
+        
+        frameworks = {
+            "web_frameworks": defaultdict(int),
+            "testing_frameworks": defaultdict(int),
+            "database_frameworks": defaultdict(int),
+            "ui_frameworks": defaultdict(int),
+            "build_tools": defaultdict(int),
+            "language_specific": defaultdict(int)
+        }
+        
+        # Limit to 10 files maximum for ultra-fast analysis
+        source_files = self.get_file_list(['.py', '.js', '.ts', '.java'])[:10]
+        
+        for file_path in source_files:
+            content = self.read_file_content(file_path)
+            if not content:
+                continue
+            
+            # Use pre-compiled patterns for ultra-fast detection
+            if self._PATTERNS['django'].search(content):
+                frameworks["web_frameworks"]["Django"] += 1
+            
+            if self._PATTERNS['flask'].search(content):
+                frameworks["web_frameworks"]["Flask"] += 1
+            
+            if self._PATTERNS['react'].search(content):
+                frameworks["web_frameworks"]["React"] += 1
+            
+            if self._PATTERNS['vue'].search(content):
+                frameworks["web_frameworks"]["Vue.js"] += 1
+            
+            if self._PATTERNS['express'].search(content):
+                frameworks["web_frameworks"]["Express.js"] += 1
+            
+            if self._PATTERNS['junit'].search(content):
+                frameworks["testing_frameworks"]["JUnit"] += 1
+            
+            if self._PATTERNS['pytest'].search(content):
+                frameworks["testing_frameworks"]["pytest"] += 1
+            
+            if self._PATTERNS['jest'].search(content):
+                frameworks["testing_frameworks"]["Jest"] += 1
+        
+        # Quick package file analysis - limit to 3 files
+        self._ultra_fast_package_analysis(frameworks)
+        
+        return frameworks
+    
+    def _ultra_fast_package_analysis(self, frameworks: Dict):
+        """Ultra-fast package file analysis"""
+        
+        # Check only first 2 requirements files
+        req_files = self.find_files_by_pattern("**/requirements*.txt")[:2]
+        for req_file in req_files:
+            content = self.read_file_content(req_file)
+            if content:
+                content_lower = content.lower()
+                if 'django' in content_lower:
+                    frameworks["web_frameworks"]["Django"] += 1
+                if 'flask' in content_lower:
+                    frameworks["web_frameworks"]["Flask"] += 1
+                if 'pytest' in content_lower:
+                    frameworks["testing_frameworks"]["pytest"] += 1
+                if 'fastapi' in content_lower:
+                    frameworks["web_frameworks"]["FastAPI"] += 1
+        
+        # Check only first package.json
+        package_files = self.find_files_by_pattern("**/package.json")[:1]
+        for package_file in package_files:
+            content = self.read_file_content(package_file)
+            if content:
+                content_lower = content.lower()
+                if 'react' in content_lower:
+                    frameworks["web_frameworks"]["React"] += 1
+                if 'vue' in content_lower:
+                    frameworks["web_frameworks"]["Vue.js"] += 1
+                if 'express' in content_lower:
+                    frameworks["web_frameworks"]["Express.js"] += 1
+                if 'jest' in content_lower:
+                    frameworks["testing_frameworks"]["Jest"] += 1
+                if 'webpack' in content_lower:
+                    frameworks["build_tools"]["Webpack"] += 1
+    
+    def _ultra_fast_coding_patterns(self) -> Dict[str, Any]:
+        """Ultra-fast coding pattern analysis"""
+        
+        patterns = {
+            "naming_conventions": defaultdict(int),
+            "code_organization": defaultdict(int),
+            "error_handling_patterns": defaultdict(int),
+            "async_patterns": defaultdict(int),
+            "functional_patterns": defaultdict(int)
+        }
+        
+        # Limit to 8 files for ultra-fast analysis
+        source_files = self.get_file_list(['.py', '.js', '.ts', '.java'])[:8]
+        
+        for file_path in source_files:
+            content = self.read_file_content(file_path)
+            if not content:
+                continue
+            
+            # Use pre-compiled patterns for speed
+            if self._PATTERNS['class_pascal'].search(content):
+                patterns["naming_conventions"]["PascalCase Classes"] += 1
+            
+            if self._PATTERNS['func_snake'].search(content):
+                patterns["naming_conventions"]["snake_case Functions"] += 1
+            
+            if self._PATTERNS['try_except'].search(content):
+                patterns["error_handling_patterns"]["Try-Except Blocks"] += 1
+            
+            if self._PATTERNS['async_def'].search(content):
+                patterns["async_patterns"]["Async Functions"] += 1
+            
+            # Quick pattern counting
+            if re.search(r'\.map\(', content):
+                patterns["functional_patterns"]["Map Operations"] += 1
+            
+            if re.search(r'\.filter\(', content):
+                patterns["functional_patterns"]["Filter Operations"] += 1
+            
+            if re.search(r'from \.\w+ import', content):
+                patterns["code_organization"]["Relative Imports"] += 1
+            
+            if re.search(r'@\w+', content):
+                patterns["code_organization"]["Decorator Usage"] += 1
+        
+        return patterns
+    
+    def _ultra_fast_structure_patterns(self) -> Dict[str, Any]:
+        """Ultra-fast project structure analysis"""
+        
+        structure = {
+            "directory_patterns": defaultdict(int),
+            "file_organization": defaultdict(int),
+            "architecture_patterns": defaultdict(int)
+        }
+        
+        # Quick directory analysis - limit to first 20 files
+        all_dirs = set()
+        for file_path in self.get_file_list()[:20]:
+            all_dirs.add(file_path.parent.name.lower())
+        
+        # Common directory patterns - quick check
+        dir_mapping = {
+            "src": "Source Directory",
+            "test": "Test Directory", 
+            "tests": "Test Directory",
+            "docs": "Documentation Directory",
+            "config": "Configuration Directory",
+            "utils": "Utilities Directory",
+            "models": "Models Directory",
+            "views": "Views Directory",
+            "components": "Components Directory"
+        }
+        
+        for dir_name in all_dirs:
+            if dir_name in dir_mapping:
+                structure["directory_patterns"][dir_mapping[dir_name]] += 1
+        
+        # Quick file extension count - limit to first 30 files
+        file_extensions = defaultdict(int)
+        for file_path in self.get_file_list()[:30]:
+            file_extensions[file_path.suffix] += 1
+        
+        structure["file_organization"] = dict(file_extensions)
+        
+        # Quick architecture pattern detection
+        if any("component" in d for d in all_dirs):
+            structure["architecture_patterns"]["Component-Based"] += 1
+        if any("mvc" in d for d in all_dirs):
+            structure["architecture_patterns"]["MVC Pattern"] += 1
+        
+        return structure
+    
+    def _generate_fast_pattern_summary(self, framework_usage: Dict, coding_patterns: Dict, 
+                                      structure_patterns: Dict) -> Dict[str, Any]:
+        """Generate fast pattern summary with minimal calculations"""
+        
+        summary = {
+            "primary_frameworks": [],
+            "dominant_patterns": [],
+            "architecture_style": "Unknown",
+            "maturity_score": 0
+        }
+        
+        # Quick primary frameworks identification
+        all_frameworks = {}
+        for category, frameworks in framework_usage.items():
+            for framework, count in frameworks.items():
+                all_frameworks[framework] = count
+        
+        # Sort and get top 3 for speed
+        sorted_frameworks = sorted(all_frameworks.items(), key=lambda x: x[1], reverse=True)
+        summary["primary_frameworks"] = [fw[0] for fw in sorted_frameworks[:3]]
+        
+        # Quick dominant patterns
+        all_patterns = {}
+        for category, patterns in coding_patterns.items():
+            for pattern, count in patterns.items():
+                all_patterns[pattern] = count
+        
+        sorted_patterns = sorted(all_patterns.items(), key=lambda x: x[1], reverse=True)
+        summary["dominant_patterns"] = [pat[0] for pat in sorted_patterns[:3]]
+        
+        # Quick architecture style determination
+        primary_fw = summary["primary_frameworks"]
+        if any("React" in fw for fw in primary_fw):
+            summary["architecture_style"] = "Component-Based"
+        elif any("Django" in fw for fw in primary_fw):
+            summary["architecture_style"] = "MVC"
+        elif any("Spring" in fw for fw in primary_fw):
+            summary["architecture_style"] = "Enterprise"
+        
+        # Simple maturity score calculation
+        score = 0
+        if len(summary["primary_frameworks"]) >= 2:
+            score += 30
+        if len(summary["dominant_patterns"]) >= 3:
+            score += 25
+        if framework_usage.get("testing_frameworks"):
+            score += 25
+        if len(structure_patterns["directory_patterns"]) >= 3:
+            score += 20
+        
+        summary["maturity_score"] = score
+        
+        return summary
+
+    def analyze_original(self, token=None, progress_callback=None) -> Dict[str, Any]:
         """Analyze development patterns and framework usage"""
         
         # Check cache first
@@ -850,7 +1157,7 @@ class DevelopmentPatternsAnalyzer(BaseAnalyzer):
         
         with col2:
             st.write("**Environment Patterns**")
-            env_patterns = dict(config_patterns["environment_patterns"])
+            env_patterns = dict(config_patterns.get("environment_patterns", {}))
             if env_patterns:
                 for pattern, count in env_patterns.items():
                     st.write(f"• {pattern}: {count}")

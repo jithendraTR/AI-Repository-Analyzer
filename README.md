@@ -4,7 +4,7 @@ An AI-powered solution to accelerate codebase onboarding and architectural disco
 
 ## Features
 
-The analyzer provides comprehensive analysis across 9 different tabs:
+The analyzer provides comprehensive analysis across 10 different tabs:
 
 1. **🧑‍💻 Expertise Mapping** - Who has worked on what (expertise mapping)
 2. **📅 Timeline Analysis** - Latest additions (project timeline understanding)
@@ -15,6 +15,7 @@ The analyzer provides comprehensive analysis across 9 different tabs:
 7. **📦 Version Governance** - Dependency management
 8. **🚨 Tech Debt Detection** - Early tech debt detection
 9. **🏗️ Design Patterns** - Deviations from design patterns
+10. **🎯 Singular Product Vision** - Product vision coherence and strategic alignment
 
 ## Setup
 
@@ -129,6 +130,13 @@ response = requests.post(url, headers=headers, json=payload)
 - Analyzes adherence to design patterns
 - Identifies SOLID principle violations
 - Detects architectural anti-patterns
+
+### Singular Product Vision
+- Analyzes product vision consistency across documentation and codebase
+- Maps feature architecture and alignment with strategic goals
+- Evaluates API consistency and naming patterns
+- Assesses development focus (feature vs maintenance work)
+- Provides vision coherence scoring and strategic recommendations
 
 ## Project Structure
 

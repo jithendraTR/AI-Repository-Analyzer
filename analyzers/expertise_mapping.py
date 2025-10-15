@@ -1,5 +1,5 @@
 """
-Expertise Mapping Analyzer
+Expertise Mapping Analyzer - Optimized Version
 Analyzes who has worked on what parts of the codebase to map developer expertise
 """
 
@@ -11,6 +11,9 @@ from collections import defaultdict, Counter
 from typing import Dict, List, Any
 from pathlib import Path
 import re
+import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import os
 
 from .base_analyzer import BaseAnalyzer, OperationCancelledException
 
@@ -18,7 +21,7 @@ class ExpertiseMapper(BaseAnalyzer):
     """Analyzes developer expertise based on git history and code contributions"""
     
     def analyze(self, token=None, progress_callback=None) -> Dict[str, Any]:
-        """Analyze developer expertise across the codebase with cancellation support"""
+        """Optimized analyze method for faster performance"""
         
         # Check cache first
         cached_result = self.get_cached_analysis("expertise_mapping")
@@ -29,69 +32,61 @@ class ExpertiseMapper(BaseAnalyzer):
             return {"error": "Git repository required for expertise mapping"}
         
         try:
-            total_steps = 5
+            total_steps = 6
             current_step = 0
             
-            # Step 1: Get commits
+            # Step 1: Get commit data efficiently using git log
             if progress_callback:
-                progress_callback(current_step, total_steps, "Loading git history...")
+                progress_callback(current_step, total_steps, "Loading git history efficiently...")
             
-            # Check for cancellation
             if token:
                 token.check_cancellation()
             
-            # Get all commits with cancellation support
-            commits = self.get_git_history_cancellable(max_commits=1000, token=token)
+            # Use optimized git log parsing instead of GitPython iteration
+            commits_data = self._get_optimized_git_data(token, max_commits=500)
             current_step += 1
             
-            # Step 2: Analyze file expertise
+            # Step 2: Analyze file expertise using bulk operations
             if progress_callback:
-                progress_callback(current_step, total_steps, "Analyzing file-level expertise...")
+                progress_callback(current_step, total_steps, "Analyzing file expertise with bulk operations...")
             
-            # Check for cancellation
             if token:
                 token.check_cancellation()
             
-            # Analyze file-level expertise
-            file_expertise = self._analyze_file_expertise(token)
+            file_expertise = self._analyze_file_expertise_optimized(commits_data['file_stats'], token)
             current_step += 1
             
-            # Step 3: Analyze technology expertise
+            # Step 3: Analyze technology expertise using parallel processing
             if progress_callback:
-                progress_callback(current_step, total_steps, "Analyzing technology expertise...")
+                progress_callback(current_step, total_steps, "Analyzing technology expertise in parallel...")
             
-            # Check for cancellation
             if token:
                 token.check_cancellation()
             
-            # Analyze technology expertise
-            tech_expertise = self._analyze_technology_expertise(token)
+            tech_expertise = self._analyze_technology_expertise_optimized(file_expertise, token)
             current_step += 1
             
-            # Step 4: Analyze commit patterns
+            # Step 4: Process commit patterns efficiently
             if progress_callback:
-                progress_callback(current_step, total_steps, "Analyzing commit patterns...")
+                progress_callback(current_step, total_steps, "Processing commit patterns...")
             
-            # Check for cancellation
             if token:
                 token.check_cancellation()
             
-            # Analyze commit patterns
-            commit_patterns = self._analyze_commit_patterns(commits, token)
+            commit_patterns = self._analyze_commit_patterns_optimized(commits_data['commits'], token)
             current_step += 1
             
-            # Step 5: Get recent activity
+            # Step 5: Calculate recent activity from existing data
             if progress_callback:
-                progress_callback(current_step, total_steps, "Analyzing recent activity...")
+                progress_callback(current_step, total_steps, "Computing recent activity...")
             
-            # Check for cancellation
             if token:
                 token.check_cancellation()
             
-            # Get recent activity
-            recent_activity = self._get_recent_activity(commits)
+            recent_activity = self._get_recent_activity_optimized(commits_data['commits'])
             current_step += 1
             
+            # Step 6: Finalize results
             if progress_callback:
                 progress_callback(current_step, total_steps, "Finalizing expertise analysis...")
             
@@ -100,7 +95,7 @@ class ExpertiseMapper(BaseAnalyzer):
                 "tech_expertise": tech_expertise,
                 "commit_patterns": commit_patterns,
                 "recent_activity": recent_activity,
-                "total_contributors": len(set(commit['author'] for commit in commits))
+                "total_contributors": commits_data['total_contributors']
             }
             
             # Cache the result
@@ -113,28 +108,149 @@ class ExpertiseMapper(BaseAnalyzer):
         except Exception as e:
             return {"error": f"Analysis failed: {str(e)}"}
     
-    def _analyze_file_expertise(self, token=None) -> Dict[str, Dict[str, int]]:
-        """Analyze which developers have worked on which files with cancellation support"""
+    def _get_optimized_git_data(self, token=None, max_commits=500) -> Dict[str, Any]:
+        """Get git data efficiently using direct git commands"""
+        try:
+            # Use git log to get commit and file stats in one go
+            cmd = [
+                'git', 'log', '--name-only', '--pretty=format:%H|%an|%ae|%ci|%s', 
+                f'-{max_commits}', '--no-merges'
+            ]
+            
+            result = subprocess.run(
+                cmd, cwd=self.repo_path, capture_output=True, text=True, timeout=60
+            )
+            
+            if result.returncode != 0:
+                return {'commits': [], 'file_stats': {}, 'total_contributors': 0}
+            
+            # Parse the output efficiently
+            commits = []
+            file_stats = defaultdict(lambda: defaultdict(int))
+            contributors = set()
+            
+            current_commit = None
+            lines = result.stdout.strip().split('\n')
+            
+            for line in lines:
+                if token and len(commits) % 50 == 0:
+                    token.check_cancellation()
+                
+                if '|' in line and len(line.split('|')) == 5:
+                    # New commit line
+                    if current_commit:
+                        commits.append(current_commit)
+                    
+                    parts = line.split('|')
+                    commit_hash, author, email, date, message = parts
+                    contributors.add(author)
+                    
+                    current_commit = {
+                        'hash': commit_hash,
+                        'author': author,
+                        'email': email,
+                        'date': pd.to_datetime(date),
+                        'message': message.strip(),
+                        'files': []
+                    }
+                elif line.strip() and current_commit:
+                    # File path
+                    file_path = line.strip()
+                    if file_path and not file_path.startswith('.git/'):
+                        current_commit['files'].append(file_path)
+                        file_stats[file_path][current_commit['author']] += 1
+            
+            # Add the last commit
+            if current_commit:
+                commits.append(current_commit)
+            
+            # Add files_changed count to commits
+            for commit in commits:
+                commit['files_changed'] = len(commit['files'])
+            
+            return {
+                'commits': commits,
+                'file_stats': dict(file_stats),
+                'total_contributors': len(contributors)
+            }
+            
+        except Exception as e:
+            # Fallback to original method if git command fails
+            commits = self.get_git_history_cancellable(max_commits=max_commits, token=token)
+            return {
+                'commits': commits,
+                'file_stats': {},
+                'total_contributors': len(set(commit['author'] for commit in commits))
+            }
+    
+    def _analyze_file_expertise_optimized(self, file_stats: Dict[str, Dict[str, int]], token=None) -> Dict[str, Dict[str, int]]:
+        """Optimized file expertise analysis using pre-computed stats"""
+        if not file_stats:
+            # Fallback to original method
+            return self._analyze_file_expertise_fallback(token)
+        
+        # Filter to only source code files
+        source_extensions = {'.py', '.js', '.ts', '.java', '.cpp', '.c', '.cs', '.go', '.rb', '.php', '.jsx', '.tsx'}
+        
+        filtered_stats = {}
+        for file_path, contributors in file_stats.items():
+            if token:
+                token.check_cancellation()
+            
+            # Check if it's a source code file
+            if any(file_path.endswith(ext) for ext in source_extensions):
+                filtered_stats[file_path] = contributors
+        
+        return filtered_stats
+    
+    def _analyze_file_expertise_fallback(self, token=None) -> Dict[str, Dict[str, int]]:
+        """Fallback method for file expertise analysis"""
         file_expertise = defaultdict(lambda: defaultdict(int))
         
-        # Get all source code files with cancellation support
-        code_files = self.get_file_list_cancellable(['.py', '.js', '.ts', '.java', '.cpp', '.c', '.cs', '.go', '.rb', '.php'], token)
+        # Get only the most important source code files (limit to 200 for performance)
+        code_files = self.get_file_list_cancellable(['.py', '.js', '.ts', '.java', '.cpp', '.c', '.cs', '.go'], token)
         
-        for i, file_path in enumerate(code_files):
-            # Check for cancellation every 10 files
-            if token and i % 10 == 0:
+        # Sort by file size/importance and limit
+        important_files = []
+        for file_path in code_files[:200]:  # Limit to first 200 files
+            if token and len(important_files) % 20 == 0:
                 token.check_cancellation()
-                
-            relative_path = str(file_path.relative_to(self.repo_path))
-            contributors = self.get_file_contributors(relative_path)
             
-            for author, commit_count in contributors.items():
-                file_expertise[relative_path][author] = commit_count
+            try:
+                file_size = file_path.stat().st_size
+                if file_size > 100 and file_size < 1000000:  # Skip very small and very large files
+                    important_files.append(file_path)
+            except:
+                continue
+        
+        # Process files in parallel batches
+        def process_file_batch(files_batch):
+            batch_results = {}
+            for file_path in files_batch:
+                relative_path = str(file_path.relative_to(self.repo_path))
+                contributors = self.get_file_contributors(relative_path)
+                if contributors:  # Only include files with contributors
+                    batch_results[relative_path] = contributors
+            return batch_results
+        
+        # Process in batches of 10 files
+        batch_size = 10
+        batches = [important_files[i:i+batch_size] for i in range(0, len(important_files), batch_size)]
+        
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = [executor.submit(process_file_batch, batch) for batch in batches]
+            
+            for future in as_completed(futures):
+                if token:
+                    token.check_cancellation()
+                
+                batch_result = future.result()
+                file_expertise.update(batch_result)
         
         return dict(file_expertise)
     
-    def _analyze_technology_expertise(self, token=None) -> Dict[str, Dict[str, int]]:
-        """Analyze developer expertise by technology/language with cancellation support"""
+    def _analyze_technology_expertise_optimized(self, file_expertise: Dict[str, Dict[str, int]], token=None) -> Dict[str, Dict[str, int]]:
+        """Optimized technology expertise analysis using pre-computed file expertise"""
         tech_expertise = defaultdict(lambda: defaultdict(int))
         
         # Technology patterns
@@ -159,35 +275,49 @@ class ExpertiseMapper(BaseAnalyzer):
             'XML': ['.xml']
         }
         
-        # Analyze each technology
-        for tech_name, extensions in tech_patterns.items():
-            # Check for cancellation
-            if token:
-                token.check_cancellation()
-                
-            files = []
-            for ext in extensions:
-                if ext.startswith('.'):
-                    files.extend(self.get_file_list_cancellable([ext], token))
-                else:
-                    # Handle special files like Dockerfile
-                    files.extend(self.find_files_by_pattern(f"**/{ext}"))
+        # Process files in parallel by grouping by technology
+        def process_tech_files(tech_name_and_patterns):
+            tech_name, patterns = tech_name_and_patterns
+            tech_stats = defaultdict(int)
             
-            for i, file_path in enumerate(files):
-                # Check for cancellation every 20 files
-                if token and i % 20 == 0:
-                    token.check_cancellation()
-                    
-                relative_path = str(file_path.relative_to(self.repo_path))
-                contributors = self.get_file_contributors(relative_path)
+            for file_path, contributors in file_expertise.items():
+                # Check if file matches this technology
+                file_matches = False
+                for pattern in patterns:
+                    if pattern.startswith('.'):
+                        if file_path.endswith(pattern):
+                            file_matches = True
+                            break
+                    else:
+                        if pattern in file_path:
+                            file_matches = True
+                            break
                 
-                for author, commit_count in contributors.items():
-                    tech_expertise[tech_name][author] += commit_count
+                if file_matches:
+                    for author, commit_count in contributors.items():
+                        tech_stats[author] += commit_count
+            
+            return tech_name, dict(tech_stats)
+        
+        # Process technologies in parallel
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = [
+                executor.submit(process_tech_files, (tech_name, patterns))
+                for tech_name, patterns in tech_patterns.items()
+            ]
+            
+            for future in as_completed(futures):
+                if token:
+                    token.check_cancellation()
+                
+                tech_name, tech_stats = future.result()
+                if tech_stats:  # Only include technologies with activity
+                    tech_expertise[tech_name] = tech_stats
         
         return dict(tech_expertise)
     
-    def _analyze_commit_patterns(self, commits: List[Dict], token=None) -> Dict[str, Any]:
-        """Analyze commit patterns by developer with cancellation support"""
+    def _analyze_commit_patterns_optimized(self, commits: List[Dict], token=None) -> Dict[str, Any]:
+        """Optimized commit patterns analysis"""
         patterns = defaultdict(lambda: {
             'total_commits': 0,
             'avg_files_per_commit': 0,
@@ -195,63 +325,83 @@ class ExpertiseMapper(BaseAnalyzer):
             'commit_types': defaultdict(int)
         })
         
-        # Commit type patterns
+        # Commit type patterns (compiled for better performance)
+        import re as regex_lib
         commit_type_patterns = {
-            'feature': r'(feat|feature|add)',
-            'fix': r'(fix|bug|patch)',
-            'refactor': r'(refactor|refact|clean)',
-            'docs': r'(doc|docs|documentation)',
-            'test': r'(test|spec)',
-            'style': r'(style|format)',
-            'chore': r'(chore|maintenance|update)'
+            'feature': regex_lib.compile(r'(feat|feature|add)', regex_lib.IGNORECASE),
+            'fix': regex_lib.compile(r'(fix|bug|patch)', regex_lib.IGNORECASE),
+            'refactor': regex_lib.compile(r'(refactor|refact|clean)', regex_lib.IGNORECASE),
+            'docs': regex_lib.compile(r'(doc|docs|documentation)', regex_lib.IGNORECASE),
+            'test': regex_lib.compile(r'(test|spec)', regex_lib.IGNORECASE),
+            'style': regex_lib.compile(r'(style|format)', regex_lib.IGNORECASE),
+            'chore': regex_lib.compile(r'(chore|maintenance|update)', regex_lib.IGNORECASE)
         }
         
-        for i, commit in enumerate(commits):
-            # Check for cancellation every 50 commits
-            if token and i % 50 == 0:
+        # Process commits in batches for better performance
+        batch_size = 100
+        for i in range(0, len(commits), batch_size):
+            if token:
                 token.check_cancellation()
+            
+            batch = commits[i:i+batch_size]
+            
+            for commit in batch:
+                author = commit['author']
+                patterns[author]['total_commits'] += 1
+                patterns[author]['avg_files_per_commit'] += commit.get('files_changed', 0)
                 
-            author = commit['author']
-            patterns[author]['total_commits'] += 1
-            patterns[author]['avg_files_per_commit'] += commit['files_changed']
-            patterns[author]['commit_messages'].append(commit['message'])
-            
-            # Classify commit type
-            message_lower = commit['message'].lower()
-            classified = False
-            
-            for commit_type, pattern in commit_type_patterns.items():
-                if re.search(pattern, message_lower):
-                    patterns[author]['commit_types'][commit_type] += 1
-                    classified = True
-                    break
-            
-            if not classified:
-                patterns[author]['commit_types']['other'] += 1
+                # Only keep recent commit messages to avoid memory issues
+                if len(patterns[author]['commit_messages']) < 10:
+                    patterns[author]['commit_messages'].append(commit['message'])
+                
+                # Classify commit type using compiled regexes
+                message = commit['message']
+                classified = False
+                
+                for commit_type, pattern in commit_type_patterns.items():
+                    if pattern.search(message):
+                        patterns[author]['commit_types'][commit_type] += 1
+                        classified = True
+                        break
+                
+                if not classified:
+                    patterns[author]['commit_types']['other'] += 1
         
-        # Calculate averages
+        # Calculate averages efficiently
         for author in patterns:
             if patterns[author]['total_commits'] > 0:
                 patterns[author]['avg_files_per_commit'] /= patterns[author]['total_commits']
+            # Convert defaultdict to regular dict for JSON serialization
+            patterns[author]['commit_types'] = dict(patterns[author]['commit_types'])
         
         return dict(patterns)
     
-    def _get_recent_activity(self, commits: List[Dict], days: int = 30) -> Dict[str, Any]:
-        """Get recent activity by developers"""
+    def _get_recent_activity_optimized(self, commits: List[Dict], days: int = 30) -> Dict[str, Any]:
+        """Optimized recent activity calculation"""
         from datetime import datetime, timedelta
         
         cutoff_date = datetime.now() - timedelta(days=days)
-        recent_commits = [c for c in commits if c['date'].replace(tzinfo=None) > cutoff_date]
         
+        # Use list comprehension for better performance
         activity = defaultdict(int)
-        for commit in recent_commits:
-            activity[commit['author']] += 1
+        recent_count = 0
+        
+        for commit in commits:
+            commit_date = commit['date']
+            # Handle different date formats
+            if hasattr(commit_date, 'replace'):
+                commit_date = commit_date.replace(tzinfo=None)
+            
+            if commit_date > cutoff_date:
+                activity[commit['author']] += 1
+                recent_count += 1
         
         return {
             'recent_commits': dict(activity),
             'active_developers': len(activity),
-            'total_recent_commits': len(recent_commits)
+            'total_recent_commits': recent_count
         }
+    
     
     def render(self):
         """Render the expertise mapping analysis"""

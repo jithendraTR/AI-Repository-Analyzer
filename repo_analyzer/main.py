@@ -29,7 +29,26 @@ from analyzers.development_patterns import DevelopmentPatternsAnalyzer
 from analyzers.version_governance import VersionGovernanceAnalyzer
 from analyzers.tech_debt_detection import TechDebtDetectionAnalyzer
 from analyzers.design_patterns import DesignPatternAnalyzer
+from analyzers.singular_product_vision import SingularProductVisionAnalyzer
 from utils.ai_client import OpenArenaClient
+from utils.git_handler import validate_and_prepare_repository, git_handler
+
+class CancellationToken:
+    """Simple cancellation token for stopping analysis"""
+    def __init__(self):
+        self.cancelled = False
+        
+    
+    def cancel(self):
+        self.cancelled = True
+    
+    def is_cancelled(self):
+        return self.cancelled
+        
+    def check_cancellation(self):
+        """Raise an exception if cancelled"""
+        if self.is_cancelled():
+            raise Exception("Operation was cancelled")
 
 class ParallelAIAnalyzer:
     """Handles parallel AI analysis for all tabs with cancellation support"""
@@ -46,7 +65,8 @@ class ParallelAIAnalyzer:
             'development_patterns': DevelopmentPatternsAnalyzer(repo_path),
             'version_governance': VersionGovernanceAnalyzer(repo_path),
             'tech_debt': TechDebtDetectionAnalyzer(repo_path),
-            'design_patterns': DesignPatternAnalyzer(repo_path)
+            'design_patterns': DesignPatternAnalyzer(repo_path),
+            'singular_product_vision': SingularProductVisionAnalyzer(repo_path)
         }
         self.cancellation_token = None
     
@@ -68,6 +88,9 @@ class ParallelAIAnalyzer:
             
             # Progress callback for individual analyzer steps
             def analyzer_progress(step, total, status):
+                # Check for cancellation during progress updates
+                if self.cancellation_token and self.cancellation_token.is_cancelled():
+                    raise Exception("Operation was cancelled during analysis")
                 print(f"DEBUG: {analyzer_name} - Step {step}/{total}: {status}")
             
             # Get analysis data - this is now running in parallel with progress tracking
@@ -97,18 +120,49 @@ class ParallelAIAnalyzer:
                     "cancelled": True
                 }
             
-            # Get AI insight
-            insight = self.ai_client.query(prompt)
-            
-            return {
-                "analyzer": analyzer_name,
-                "insight": insight,
-                "success": True,
-                "analysis_data": analysis_data  # Include raw analysis data
-            }
+            # Get AI insight with more frequent cancellation checks
+            try:
+                insight = self.ai_client.query(prompt)
+                
+                # Final cancellation check
+                if self.cancellation_token and self.cancellation_token.is_cancelled():
+                    return {
+                        "analyzer": analyzer_name,
+                        "error": "Operation was cancelled",
+                        "success": False,
+                        "cancelled": True
+                    }
+                
+                # If AI insight was successful, return with insight
+                if insight and insight.strip():
+                    return {
+                        "analyzer": analyzer_name,
+                        "insight": insight,
+                        "success": True,
+                        "analysis_data": analysis_data  # Include raw analysis data
+                    }
+                else:
+                    # AI insight failed but analysis data is still valid - mark as success
+                    return {
+                        "analyzer": analyzer_name,
+                        "insight": "⚠️ AI insight generation failed, but analysis data is available. Check the Raw Analysis Data section below for detailed results.",
+                        "success": True,  # Still mark as success!
+                        "analysis_data": analysis_data,  # Raw data is still valuable
+                        "ai_insight_failed": True
+                    }
+            except Exception as ai_error:
+                # AI insight failed but analysis data is still valid - mark as success
+                print(f"DEBUG: AI insight generation failed for {analyzer_name}: {ai_error}")
+                return {
+                    "analyzer": analyzer_name,
+                    "insight": f"⚠️ AI insight generation failed ({str(ai_error)}), but analysis data is available. Check the Raw Analysis Data section below for detailed results.",
+                    "success": True,  # Still mark as success!
+                    "analysis_data": analysis_data,  # Raw data is still valuable
+                    "ai_insight_failed": True
+                }
         except Exception as e:
             # Check if it's a cancellation
-            if "cancelled" in str(e).lower():
+            if "cancelled" in str(e).lower() or (self.cancellation_token and self.cancellation_token.is_cancelled()):
                 return {
                     "analyzer": analyzer_name,
                     "error": "Operation was cancelled",
@@ -223,109 +277,95 @@ class ParallelAIAnalyzer:
             2. Architecture consistency analysis
             3. Pattern improvement recommendations
             4. Code structure optimization suggestions
+            """,
+            
+            'singular_product_vision': f"""
+            Analyze the product vision coherence and strategic alignment:
+            {str(analysis_data)[:2000]}
+            
+            Provide:
+            1. Product vision clarity and consistency assessment
+            2. Feature alignment with strategic goals analysis
+            3. Areas where vision could be strengthened
+            4. Recommendations for maintaining product focus
+            5. Strategic suggestions for better feature coherence
+            6. Potential risks to product direction
             """
         }
         
         return prompts.get(analyzer_name, f"Analyze this data: {str(analysis_data)[:2000]}")
     
     def run_parallel_analysis(self, progress_callback=None) -> Dict[str, Any]:
-        """Run AI analysis for all analyzers in parallel with cancellation support"""
+        """Run AI analysis for all analyzers sequentially with immediate cancellation support"""
         results = {}
         completed_count = 0
         total_count = len(self.analyzers)
         
+        # Immediate cancellation check before starting anything
+        if self.cancellation_token and self.cancellation_token.is_cancelled():
+            print("DEBUG: Analysis was cancelled before starting")
+            # Return cancelled results for all analyzers
+            for analyzer_name in self.analyzers.keys():
+                results[analyzer_name] = {
+                    "analyzer": analyzer_name,
+                    "error": "Operation was cancelled",
+                    "success": False,
+                    "cancelled": True
+                }
+            return results
+        
         # Debug: Print what analyzers we're about to run
-        print(f"DEBUG: Starting parallel analysis for {total_count} analyzers: {list(self.analyzers.keys())}")
+        print(f"DEBUG: Starting sequential analysis for {total_count} analyzers: {list(self.analyzers.keys())}")
         
-        # Use a smaller thread pool to avoid overwhelming the system
-        max_workers = min(total_count, 2)  # Reduced to 2 to prevent timeouts
-        print(f"DEBUG: Using {max_workers} worker threads")
-        
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit all tasks at once - this should start them all simultaneously
-            future_to_analyzer = {}
+        # Run analyzers sequentially for immediate cancellation
+        for name, analyzer in self.analyzers.items():
+            # Check cancellation before each analyzer
+            if self.cancellation_token and self.cancellation_token.is_cancelled():
+                print(f"DEBUG: Cancellation detected before starting {name}")
+                # Mark this analyzer as cancelled
+                results[name] = {
+                    "analyzer": name,
+                    "error": "Operation was cancelled",
+                    "success": False,
+                    "cancelled": True
+                }
+                # Mark all remaining analyzers as cancelled too
+                remaining_analyzers = list(self.analyzers.keys())[list(self.analyzers.keys()).index(name)+1:]
+                for remaining_name in remaining_analyzers:
+                    results[remaining_name] = {
+                        "analyzer": remaining_name,
+                        "error": "Operation was cancelled",
+                        "success": False,
+                        "cancelled": True
+                    }
+                break
             
-            # Submit all tasks and track them
-            for name, analyzer in self.analyzers.items():
-                print(f"DEBUG: Submitting {name} to thread pool")
-                future = executor.submit(self.run_single_analysis, name, analyzer)
-                future_to_analyzer[future] = name
+            print(f"DEBUG: Starting {name}")
             
-            print(f"DEBUG: All {len(future_to_analyzer)} tasks submitted to thread pool")
-            
-            # Update progress to show all analyzers are starting
+            # Update progress
             if progress_callback:
-                analyzer_names = [name.replace('_', ' ').title() for name in self.analyzers.keys()]
-                progress_callback(0, total_count, f"Starting: {', '.join(analyzer_names[:3])}{'...' if len(analyzer_names) > 3 else ''}")
+                progress_callback(completed_count, total_count, f"Running: {name.replace('_', ' ').title()}")
             
-            # Collect results as they complete with timeout
-            try:
-                for future in concurrent.futures.as_completed(future_to_analyzer, timeout=900):  # 15 minute total timeout
-                    # Check for cancellation
-                    if self.cancellation_token and self.cancellation_token.is_cancelled():
-                        print("DEBUG: Cancellation detected, stopping remaining tasks")
-                        # Cancel remaining futures
-                        for remaining_future in future_to_analyzer:
-                            if not remaining_future.done():
-                                remaining_future.cancel()
-                        
-                        # Add cancelled status to remaining analyzers
-                        for remaining_future, remaining_analyzer in future_to_analyzer.items():
-                            if not remaining_future.done():
-                                results[remaining_analyzer] = {
-                                    "analyzer": remaining_analyzer,
-                                    "error": "Operation was cancelled",
-                                    "success": False,
-                                    "cancelled": True
-                                }
-                        break
-                    
-                    analyzer_name = future_to_analyzer[future]
-                    print(f"DEBUG: {analyzer_name} completed")
-                    
-                    try:
-                        result = future.result(timeout=5)  # Short timeout since future is already done
-                        results[analyzer_name] = result
-                        completed_count += 1
-                        
-                        # Update progress if callback provided
-                        if progress_callback:
-                            # Show which analyzers are still running
-                            remaining_analyzers = [name for f, name in future_to_analyzer.items() if not f.done()]
-                            if remaining_analyzers:
-                                progress_callback(completed_count, total_count, f"Running: {', '.join(remaining_analyzers[:2])}{'...' if len(remaining_analyzers) > 2 else ''}")
-                            else:
-                                progress_callback(completed_count, total_count, "Finalizing results")
-                            
-                    except concurrent.futures.TimeoutError:
-                        print(f"DEBUG: {analyzer_name} result timed out")
-                        results[analyzer_name] = {
-                            "analyzer": analyzer_name,
-                            "error": "Result retrieval timed out",
-                            "success": False
-                        }
-                        completed_count += 1
-                    except Exception as e:
-                        print(f"DEBUG: {analyzer_name} failed with error: {str(e)}")
-                        results[analyzer_name] = {
-                            "analyzer": analyzer_name,
-                            "error": str(e),
-                            "success": False
-                        }
-                        completed_count += 1
-                        
-            except concurrent.futures.TimeoutError:
-                print("DEBUG: Overall analysis timed out")
-                # Handle any remaining futures that didn't complete
-                for future, analyzer_name in future_to_analyzer.items():
-                    if analyzer_name not in results:
-                        results[analyzer_name] = {
-                            "analyzer": analyzer_name,
-                            "error": "Analysis timed out",
-                            "success": False
-                        }
+            # Run single analysis with frequent cancellation checks
+            result = self.run_single_analysis(name, analyzer)
+            results[name] = result
+            completed_count += 1
+            
+            # Check if this analyzer was cancelled
+            if result.get('cancelled', False):
+                print(f"DEBUG: {name} was cancelled, stopping remaining analyzers")
+                # Mark all remaining analyzers as cancelled
+                remaining_analyzers = list(self.analyzers.keys())[list(self.analyzers.keys()).index(name)+1:]
+                for remaining_name in remaining_analyzers:
+                    results[remaining_name] = {
+                        "analyzer": remaining_name,
+                        "error": "Operation was cancelled",
+                        "success": False,
+                        "cancelled": True
+                    }
+                break
         
-        print(f"DEBUG: Parallel analysis completed. Results: {len(results)} analyzers")
+        print(f"DEBUG: Sequential analysis completed. Results: {len(results)} analyzers")
         return results
 
 def main():
@@ -335,7 +375,7 @@ def main():
         layout="wide"
     )
     
-    # Hide Streamlit's default deploy button and menu
+    # Hide Streamlit's default deploy button and menu + Fix styling
     hide_streamlit_style = """
     <style>
     #MainMenu {visibility: hidden;}
@@ -351,717 +391,830 @@ def main():
     button[title="Deploy this app"] {display: none !important;}
     .css-1rs6os {display: none !important;}
     .css-17eq0hr {display: none !important;}
+    
+    /* Fix text input styling - remove red border and improve appearance */
+    .stTextInput > div > div > input {
+        border: 1px solid #d1d5db !important;
+        border-radius: 6px !important;
+        padding: 8px 12px !important;
+        background-color: white !important;
+        box-sizing: border-box !important;
+    }
+    
+    .stTextInput > div > div > input:focus {
+        border-color: #3b82f6 !important;
+        box-shadow: 0 0 0 1px #3b82f6 !important;
+        outline: none !important;
+    }
+    
+    /* Ensure text input container stays within sidebar bounds - more aggressive approach */
+    [data-testid="stSidebar"] .stTextInput {
+        max-width: calc(100% - 2rem) !important;
+        width: calc(100% - 2rem) !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    
+    [data-testid="stSidebar"] .stTextInput > div {
+        max-width: 100% !important;
+        width: 100% !important;
+        overflow: hidden !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    
+    [data-testid="stSidebar"] .stTextInput > div > div {
+        max-width: 100% !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    
+    [data-testid="stSidebar"] .stTextInput > div > div > input {
+        max-width: 100% !important;
+        width: 100% !important;
+    }
+    
+    /* Force sidebar content to respect boundaries */
+    [data-testid="stSidebar"] > div {
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+        box-sizing: border-box !important;
+    }
+    
+    /* Fix sidebar spacing and alignment */
+    [data-testid="stSidebar"] .block-container {
+        padding-top: 1rem !important;
+        padding-bottom: 1rem !important;
+    }
+    
+    /* Improve checkbox alignment */
+    .stCheckbox {
+        margin-bottom: 0.5rem !important;
+    }
+    
+    /* Fix button styling */
+    .stButton > button {
+        width: 100% !important;
+        margin-top: 1rem !important;
+    }
+    
+    /* Clean up form elements */
+    .stSelectbox, .stTextInput {
+        margin-bottom: 1rem !important;
+    }
+    
+    /* Remove any error styling on inputs */
+    .stTextInput [data-baseweb="input"]:not(:focus):not(:hover) {
+        border-color: #d1d5db !important;
+    }
+    
+    .stTextInput [data-baseweb="input"] {
+        background-color: white !important;
+    }
     </style>
     """
     st.markdown(hide_streamlit_style, unsafe_allow_html=True)
     
+    # Hide default Streamlit sidebar controls completely and add custom CSS for our toggle button
+    st.markdown("""
+    <style>
+    /* Hide all default Streamlit sidebar collapse/expand controls */
+    [data-testid="collapsedControl"] {display: none !important;}
+    [data-testid="stSidebarNav"] {display: none !important;}
+    .css-1outpf7 {display: none !important;}
+    .css-vk3wp9 {display: none !important;}
+    .css-14xtw13 {display: none !important;}
+    .css-1lcbmhc {display: none !important;}
+    .css-17eq0hr {display: none !important;}
+    button[kind="header"] {display: none !important;}
+    button[title="Expand sidebar"] {display: none !important;}
+    button[title="Collapse sidebar"] {display: none !important;}
+    button[aria-label="Expand sidebar"] {display: none !important;}
+    button[aria-label="Collapse sidebar"] {display: none !important;}
+    .stSidebar button[kind="header"] {display: none !important;}
+    
+    /* Additional targeting for any remaining default controls */
+    [data-testid="stSidebar"] > div > div:first-child button:not([key="toggle_sidebar"]) {
+        display: none !important;
+    }
+    
+    /* Main content area adjustments - more aggressive targeting */
+    .main, .main .block-container, .stApp > .main, [data-testid="stAppViewContainer"] .main {
+        transition: margin-left 0.3s ease, max-width 0.3s ease, width 0.3s ease !important;
+    }
+    
+    /* Target Streamlit's main content wrapper more specifically */
+    .stApp > .main {
+        margin-left: 21rem !important;
+        width: calc(100vw - 21rem) !important;
+        transition: all 0.3s ease !important;
+    }
+    
+    /* When sidebar is collapsed - main content expands to full width */
+    .sidebar-collapsed ~ .main,
+    body:has(.sidebar-collapsed) .main,
+    .stApp:has(.sidebar-collapsed) > .main {
+        margin-left: 0 !important;
+        width: 100vw !important;
+        max-width: 100vw !important;
+    }
+    
+    .sidebar-collapsed ~ .main .block-container,
+    body:has(.sidebar-collapsed) .main .block-container {
+        max-width: none !important;
+        width: 100% !important;
+        padding-left: 4rem !important;
+        padding-right: 2rem !important;
+    }
+    
+    /* Completely hide sidebar when collapsed - show only toggle button */
+    [data-testid="stSidebar"].sidebar-collapsed {
+        width: 60px !important;
+        min-width: 60px !important;
+        max-width: 60px !important;
+        background: transparent !important;
+        background-color: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        transition: width 0.3s ease !important;
+        position: fixed !important;
+        z-index: 999999 !important;
+    }
+    
+    /* Normal sidebar with smooth transition */
+    [data-testid="stSidebar"] {
+        transition: width 0.3s ease !important;
+    }
+    
+    /* Hide the gray sidebar container completely when collapsed */
+    [data-testid="stSidebar"].sidebar-collapsed > div {
+        display: none !important;
+    }
+    
+    /* Hide all sidebar content except toggle button when collapsed */
+    [data-testid="stSidebar"].sidebar-collapsed .element-container:not(:first-child) {
+        display: none !important;
+    }
+    
+    /* Make toggle button float and be visible when collapsed */
+    [data-testid="stSidebar"].sidebar-collapsed .element-container:first-child {
+        position: fixed !important;
+        top: 1rem !important;
+        left: 1rem !important;
+        z-index: 999999 !important;
+        background: transparent !important;
+        width: auto !important;
+        display: block !important;
+    }
+    
+    /* Style the toggle button to be prominent and accessible */
+    [data-testid="stSidebar"] button[key="toggle_sidebar"] {
+        width: 45px !important;
+        height: 45px !important;
+        padding: 5px !important;
+        font-size: 16px !important;
+        background-color: #007bff !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 8px !important;
+        margin: 2px auto !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+    }
+    
+    [data-testid="stSidebar"] button[key="toggle_sidebar"]:hover {
+        background-color: #0056b3 !important;
+        transform: scale(1.05) !important;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2) !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Main app header
     st.title("🔍 AI-Powered Codebase Analyzer")
     st.markdown("Accelerate codebase onboarding and architectural discovery")
     
-    # Sidebar for repository selection
-    with st.sidebar:
-        st.header("Repository Configuration")
-        repo_path = st.text_input("Repository Path", placeholder="/path/to/your/repo")
-        
-        # Auto-validate repository path without button
-        if repo_path and os.path.exists(repo_path):
-            if 'repo_path' not in st.session_state or st.session_state.repo_path != repo_path:
-                st.session_state.repo_path = repo_path
-                st.success("Repository loaded successfully!")
-        elif repo_path and not os.path.exists(repo_path):
-            st.error("Please provide a valid repository path")
-        
-        # Analysis Selection Section - Always visible when repo path is provided
-        if repo_path and os.path.exists(repo_path):
-            st.header("🎯 Select Analysis")
-            st.markdown("Choose which analyses to run on your repository")
-            
-            analysis_options = {
-                'expertise': '👥 Expertise Mapping',
-                'timeline': '📅 Timeline Analysis',
-                'api_contracts': '🔌 API Contracts',
-                'ai_context': '🤖 AI Context',
-                'risk_analysis': '⚠️ Risk Analysis',
-                'development_patterns': '🏗️ Development Patterns',
-                'version_governance': '📦 Version Governance',
-                'tech_debt': '🔧 Tech Debt Detection',
-                'design_patterns': '📐 Design Patterns'
+    # Initialize session state
+    if 'analysis_complete' not in st.session_state:
+        st.session_state.analysis_complete = False
+    if 'results' not in st.session_state:
+        st.session_state.results = {}
+    if 'sidebar_collapsed' not in st.session_state:
+        st.session_state.sidebar_collapsed = False
+    if 'analysis_running' not in st.session_state:
+        st.session_state.analysis_running = False
+    if 'current_analyzer' not in st.session_state:
+        st.session_state.current_analyzer = None
+    if 'last_repo_path' not in st.session_state:
+        st.session_state.last_repo_path = ""
+    if 'success_message' not in st.session_state:
+        st.session_state.success_message = ""
+    if 'success_message_time' not in st.session_state:
+        st.session_state.success_message_time = 0
+    if 'cancellation_token' not in st.session_state:
+        st.session_state.cancellation_token = None
+    if 'prepared_repo_info' not in st.session_state:
+        st.session_state.prepared_repo_info = None
+    if 'actual_repo_path' not in st.session_state:
+        st.session_state.actual_repo_path = ""
+    
+    # Apply CSS class conditionally for sidebar collapse with ultra-aggressive DOM manipulation
+    if st.session_state.sidebar_collapsed:
+        st.markdown("""
+        <script>
+        (function() {
+            // Force immediate execution
+            function collapseInterface() {
+                const sidebar = document.querySelector('[data-testid="stSidebar"]');
+                const main = document.querySelector('.main');
+                const mainContainer = document.querySelector('.main .block-container');
+                const stApp = document.querySelector('.stApp');
+                
+                // Completely hide sidebar - only show toggle button
+                if (sidebar) {
+                    sidebar.classList.add('sidebar-collapsed');
+                    sidebar.style.width = '60px !important';
+                    sidebar.style.minWidth = '60px !important';
+                    sidebar.style.maxWidth = '60px !important';
+                    sidebar.style.position = 'fixed';
+                    sidebar.style.zIndex = '999999';
+                    sidebar.style.background = 'transparent';
+                    sidebar.style.border = 'none';
+                    sidebar.style.transition = 'width 0.3s ease';
+                }
+                
+                // Expand main content to full width (with small margin for floating button)
+                if (main) {
+                    main.classList.add('sidebar-collapsed');
+                    main.style.marginLeft = '0 !important';
+                    main.style.width = '100vw !important';
+                    main.style.maxWidth = '100vw !important';
+                    main.style.transition = 'all 0.3s ease !important';
+                    main.style.position = 'relative';
+                    main.style.left = '0px';
+                }
+                
+                // Also target the inner container
+                if (mainContainer) {
+                    mainContainer.style.maxWidth = '100% !important';
+                    mainContainer.style.width = '100% !important';
+                    mainContainer.style.paddingLeft = '4rem !important';
+                    mainContainer.style.paddingRight = '2rem !important';
+                    mainContainer.style.marginLeft = '0 !important';
+                }
+                
+                // Set body class for global styling
+                document.body.classList.add('sidebar-collapsed');
+                document.body.style.overflow = 'auto';
+                
+                console.log('COLLAPSED: Sidebar completely hidden, main content expanded to full width');
             }
             
-            # Initialize session state for selected analyses if not exists
-            if 'selected_analyses' not in st.session_state:
-                st.session_state.selected_analyses = []
+            // Execute immediately and with delays to force layout
+            collapseInterface();
+            setTimeout(collapseInterface, 50);
+            setTimeout(collapseInterface, 200);
+            setTimeout(collapseInterface, 500);
+        })();
+        </script>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <script>
+        (function() {
+            // Force immediate execution
+            function expandInterface() {
+                const sidebar = document.querySelector('[data-testid="stSidebar"]');
+                const main = document.querySelector('.main');
+                const mainContainer = document.querySelector('.main .block-container');
+                
+                // Expand sidebar back to normal
+                if (sidebar) {
+                    sidebar.classList.remove('sidebar-collapsed');
+                    sidebar.style.width = '';
+                    sidebar.style.minWidth = '';
+                    sidebar.style.maxWidth = '';
+                    sidebar.style.position = '';
+                    sidebar.style.zIndex = '';
+                    sidebar.style.background = '';
+                    sidebar.style.borderRight = '';
+                }
+                
+                // Move main content back to normal position
+                if (main) {
+                    main.classList.remove('sidebar-collapsed');
+                    main.style.marginLeft = '21rem !important';
+                    main.style.width = 'calc(100vw - 21rem) !important';
+                    main.style.maxWidth = 'calc(100vw - 21rem) !important';
+                    main.style.transition = 'all 0.4s ease !important';
+                    main.style.position = '';
+                    main.style.left = '';
+                }
+                
+                // Reset container styles
+                if (mainContainer) {
+                    mainContainer.style.maxWidth = '';
+                    mainContainer.style.width = '';
+                    mainContainer.style.paddingLeft = '';
+                    mainContainer.style.paddingRight = '';
+                    mainContainer.style.marginLeft = '';
+                }
+                
+                // Remove body class
+                document.body.classList.remove('sidebar-collapsed');
+                
+                console.log('EXPANDED: Sidebar restored to full width, main content returned to normal');
+            }
             
-            # Quick selection buttons
+            // Execute immediately and with delays to force layout
+            expandInterface();
+            setTimeout(expandInterface, 50);
+            setTimeout(expandInterface, 200);
+            setTimeout(expandInterface, 500);
+        })();
+        </script>
+        """, unsafe_allow_html=True)
+    
+    # Sidebar for configuration
+    with st.sidebar:
+        # Custom toggle button - always visible at the top
+        toggle_icon = "▶" if st.session_state.sidebar_collapsed else "◀"
+        toggle_help = "Expand sidebar" if st.session_state.sidebar_collapsed else "Collapse sidebar"
+        
+        if st.button(toggle_icon, key="toggle_sidebar", help=toggle_help):
+            st.session_state.sidebar_collapsed = not st.session_state.sidebar_collapsed
+        
+        # Initialize repo_path from session state (always available)
+        repo_path = st.session_state.get('last_repo_path', '')
+        
+        # Only show content when not collapsed
+        if not st.session_state.sidebar_collapsed:
+            st.header("Repository Configuration")
+            
+            # Repository path input with session state value
+            repo_path = st.text_input(
+                "Repository Path",
+                value=st.session_state.get('last_repo_path', ''),
+                placeholder="C:\\path\\to\\your\\repo",
+                help="Enter the full path to your Git repository",
+                key="repo_path_input"
+            )
+            
+            # Add Apply button
+            col1, col2 = st.columns([1.2, 2.8])
+            with col1:
+                apply_clicked = st.button("🔄 Apply", type="secondary", help="Load the repository", use_container_width=True)
+            with col2:
+                st.markdown(
+                    '<div style="margin-top: 8px; color: #888; font-size: 13px; font-style: italic;">Click Apply to load repository</div>', 
+                    unsafe_allow_html=True
+                )
+            
+            # Check if repository should be loaded (Apply button only)
+            repo_should_load = False
+            if apply_clicked:
+                repo_should_load = True
+            
+            # Show immediate validation feedback for any valid path entered
+            if repo_should_load:
+                if repo_path and repo_path.strip() and repo_path not in ["/path/to/your/repo", "C:\\path\\to\\your\\repo"]:
+                    # Fast path detection: check if it's a Git URL first
+                    is_git_url = (repo_path.startswith('https://github.com/') or 
+                                 repo_path.startswith('git@github.com:') or
+                                 repo_path.startswith('https://gitlab.com/') or
+                                 repo_path.startswith('git@gitlab.com:'))
+                    
+                    if is_git_url:
+                        # It's a Git URL - use the full validation and cloning process
+                        validation_result = validate_and_prepare_repository(repo_path)
+                        
+                        if validation_result['success']:
+                            # Clone the repository
+                            clone_result = git_handler.clone_repository(repo_path)
+                            if clone_result['success']:
+                                success_msg = f"✅ Git repository cloned successfully! {clone_result.get('info', '')}"
+                                # Store both original URL and local path
+                                st.session_state.prepared_repo_info = clone_result
+                                st.session_state.actual_repo_path = clone_result['local_path']
+                                st.session_state.last_repo_path = repo_path  # Keep original URL for display
+                            else:
+                                st.error(f"❌ Failed to clone Git repository: {clone_result['error']}")
+                                return  # Exit early on clone failure
+                        else:
+                            st.error(f"❌ Repository validation failed: {validation_result['error']}")
+                            return
+                    else:
+                        # It's a local path - use the original fast validation (PRESERVE ORIGINAL PERFORMANCE)
+                        if os.path.exists(repo_path):
+                            # Check if it's a git repository
+                            if os.path.exists(os.path.join(repo_path, '.git')):
+                                success_msg = "✅ Repository loaded successfully! Valid Git repository detected"
+                            else:
+                                success_msg = "✅ Repository loaded successfully! Directory found (not a Git repository)"
+                            
+                            # For local paths, actual path is the same as input path (no cloning needed)
+                            st.session_state.prepared_repo_info = None
+                            st.session_state.actual_repo_path = repo_path
+                            st.session_state.last_repo_path = repo_path
+                        else:
+                            st.error("❌ Repository path does not exist. Please check the path and try again.")
+                            return
+                    
+                    # Show success message
+                    st.session_state.success_message = success_msg
+                    st.session_state.success_message_time = time.time()
+                    st.success(success_msg)
+                else:
+                    st.error("❌ Please enter a valid repository path or Git URL.")
+            
+            # Show stored success message if within time limit
+            elif st.session_state.get('success_message') and time.time() - st.session_state.get('success_message_time', 0) < 3:
+                st.success(st.session_state.get('success_message'))
+            
+            st.markdown("---")
+            
+            # Analysis selection
+            st.header("🎯 Select Analysis")
+            analysis_options = {
+                'expertise': '👥 Team Expertise Mapping',
+                'timeline': '📅 Timeline Analysis',
+                'api_contracts': '🔗 API Contracts',
+                'ai_context': '🤖 AI Context Analysis',
+                'risk_analysis': '⚠️ Risk Analysis',
+                'development_patterns': '🔄 Development Patterns',
+                'version_governance': '📦 Version Governance',
+                'tech_debt': '🔧 Technical Debt Detection',
+                'design_patterns': '🏗️ Design Patterns',
+                'singular_product_vision': '🎯 Singular Product Vision'
+            }
+            
+            st.markdown("Choose which analyses to run on your repository")
+            
+            # Add Select All / Clear All buttons side by side
             col1, col2 = st.columns(2)
             with col1:
                 if st.button("📊 Select All", key="select_all"):
-                    st.session_state.selected_analyses = list(analysis_options.keys())
-                    st.rerun()
+                    for key in analysis_options.keys():
+                        st.session_state[f"selected_{key}"] = True
+                    # Increment counter to force multiselect refresh
+                    if 'multiselect_refresh_counter' not in st.session_state:
+                        st.session_state.multiselect_refresh_counter = 0
+                    st.session_state.multiselect_refresh_counter += 1
+            
             with col2:
                 if st.button("🗑️ Clear All", key="clear_all"):
-                    st.session_state.selected_analyses = []
-                    st.rerun()
+                    for key in analysis_options.keys():
+                        st.session_state[f"selected_{key}"] = False
+                    # Increment counter to force multiselect refresh
+                    if 'multiselect_refresh_counter' not in st.session_state:
+                        st.session_state.multiselect_refresh_counter = 0
+                    st.session_state.multiselect_refresh_counter += 1
             
-            # Use session state as the value for multiselect
-            selected_analyses = st.multiselect(
-                "Select analyses to run:",
-                options=list(analysis_options.keys()),
-                format_func=lambda x: analysis_options[x],
-                default=st.session_state.selected_analyses,
-                help="Choose one or more analyses to run on your repository"
+            # Initialize selected analyses in session state if not present
+            for key in analysis_options.keys():
+                if f"selected_{key}" not in st.session_state:
+                    st.session_state[f"selected_{key}"] = False
+            
+            # Display multiselect with current selection
+            st.markdown("Select analyses to run:")
+            
+            # Create a multiselect for analyses
+            options = list(analysis_options.values())
+            keys = list(analysis_options.keys())
+            
+            # Get default selections based on session state
+            default_selections = [
+                options[i] for i, key in enumerate(keys) 
+                if st.session_state.get(f"selected_{key}", False)
+            ]
+            
+            selected_options = st.multiselect(
+                "Select analyses",
+                options=options,
+                default=default_selections,
+                label_visibility="collapsed",
+                key=f"multiselect_analyses_{st.session_state.get('multiselect_refresh_counter', 0)}"
             )
             
-            # Update session state when multiselect changes
-            if st.session_state.selected_analyses != selected_analyses:
-                st.session_state.selection_changing = True
-                st.session_state.selected_analyses = selected_analyses
-                # Clear the flag after a brief moment
-                import threading
-                def clear_flag():
-                    import time
-                    time.sleep(0.1)
-                    if 'selection_changing' in st.session_state:
-                        del st.session_state.selection_changing
-                threading.Thread(target=clear_flag, daemon=True).start()
-            else:
-                # Ensure flag is cleared if selections are the same
-                if 'selection_changing' in st.session_state:
-                    del st.session_state.selection_changing
+            # Update session state based on selection
+            selected_analyses = {}
+            for key, label in analysis_options.items():
+                is_selected = label in selected_options
+                selected_analyses[key] = is_selected
+                # Only update session state if there's a change to avoid conflicts
+                current_state = st.session_state.get(f"selected_{key}", False)
+                if current_state != is_selected:
+                    st.session_state[f"selected_{key}"] = is_selected
             
-            # Run Analysis Section
-            if selected_analyses:
-                st.markdown("---")
-                st.subheader("🚀 Run Analysis")
-                
-                    # Check if analysis is running
-                analysis_running = st.session_state.get('analysis_running', False)
-                
-                if not analysis_running:
-                    if st.button(f"🚀 Run {len(selected_analyses)} Selected Analysis{'es' if len(selected_analyses) > 1 else ''}", key="run_selected"):
-                        # Mark as running and explicitly set button clicked flag
-                        st.session_state.analysis_running = True
-                        st.session_state.analysis_button_clicked = True
-                        st.session_state.analysis_token = f"analysis_{int(time.time())}"
-                        st.rerun()
-                else:
-                    # Show progress and stop button
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
-                    
-                    # Stop button aligned properly
-                    if st.button("🛑 Stop Analysis", key="stop_analysis", use_container_width=True):
-                        st.session_state.analysis_cancelled = True
-                        st.session_state.analysis_running = False
-                        # Clear any existing results to avoid confusion
-                        if 'analysis_results' in st.session_state:
-                            del st.session_state.analysis_results
-                        st.warning("Analysis stopped. You can start a new analysis now.")
-                        st.rerun()
-                    
-                    # Check if analysis was cancelled immediately
-                    if st.session_state.get('analysis_cancelled', False):
-                        # Analysis was cancelled - clean up immediately
-                        st.session_state.analysis_running = False
-                        cleanup_keys = ['analysis_cancelled', 'analysis_token', 'analysis_button_clicked']
-                        for key in cleanup_keys:
-                            if key in st.session_state:
-                                del st.session_state[key]
-                        # Clear any partial results
-                        if 'analysis_results' in st.session_state:
-                            del st.session_state.analysis_results
-                        st.info("Analysis was stopped. You can start a new analysis now.")
-                        st.rerun()
-                    else:
-                        # Initialize analysis if not started AND button was clicked
-                        if 'analysis_started' not in st.session_state and st.session_state.get('analysis_button_clicked', False):
-                            st.session_state.analysis_started = True
-                            st.session_state.analysis_progress = 0
-                            st.session_state.analysis_status = "Starting parallel analysis..."
-                            st.session_state.analysis_start_time = time.time()
-                            
-                            # Initialize progress tracking for each analyzer
-                            st.session_state.analyzer_progress = {}
-                            for analyzer_name in selected_analyses:
-                                st.session_state.analyzer_progress[analyzer_name] = {
-                                    'status': 'Queued',
-                                    'progress': 0,
-                                    'step': 0,
-                                    'total_steps': 0
-                                }
-                            
-                            # Run analysis directly without threading to avoid UI update issues
-                            try:
-                                parallel_analyzer = ParallelAIAnalyzer(st.session_state.repo_path)
-                                
-                                # Create cancellation token
-                                from analyzers.base_analyzer import CancellationToken
-                                token = CancellationToken(st.session_state.analysis_token)
-                                parallel_analyzer.set_cancellation_token(token)
-                                
-                                # Filter analyzers to only selected ones
-                                filtered_analyzers = {
-                                    key: analyzer for key, analyzer in parallel_analyzer.analyzers.items()
-                                    if key in selected_analyses
-                                }
-                                parallel_analyzer.analyzers = filtered_analyzers
-                                
-                                # Progress callback that updates session state
-                                def update_progress(completed, total, current_analyzer):
-                                    if not st.session_state.get('analysis_cancelled', False):
-                                        progress = completed / total if total > 0 else 0
-                                        st.session_state.analysis_progress = progress
-                                        
-                                        if completed == 0:
-                                            st.session_state.analysis_status = f"Starting analyzers: {', '.join([name.replace('_', ' ').title() for name in selected_analyses[:2]])}{'...' if len(selected_analyses) > 2 else ''}"
-                                        elif completed < total:
-                                            st.session_state.analysis_status = f"Running: {current_analyzer.replace('_', ' ').title()}... ({completed}/{total})"
-                                        else:
-                                            st.session_state.analysis_status = f"Finalizing results... ({completed}/{total})"
-                                        
-                                        # Update individual analyzer status
-                                        for analyzer_name in selected_analyses:
-                                            if analyzer_name in st.session_state.analyzer_progress:
-                                                if current_analyzer == analyzer_name:
-                                                    st.session_state.analyzer_progress[analyzer_name]['status'] = 'Running'
-                                                elif completed > 0:
-                                                    # Check if this analyzer might be completed (rough estimation)
-                                                    analyzer_index = list(selected_analyses).index(analyzer_name) if analyzer_name in selected_analyses else -1
-                                                    if analyzer_index >= 0 and analyzer_index < completed:
-                                                        st.session_state.analyzer_progress[analyzer_name]['status'] = 'Completed'
-                                                        st.session_state.analyzer_progress[analyzer_name]['progress'] = 100
-                                
-                                # Run parallel analysis - this will execute multiple analyzers simultaneously
-                                results = parallel_analyzer.run_parallel_analysis(progress_callback=update_progress)
-                                
-                                # Store results if not cancelled
-                                if not st.session_state.get('analysis_cancelled', False):
-                                    st.session_state.analysis_results = results
-                                    st.session_state.analysis_completed = True
-                                    st.session_state.analysis_progress = 1.0
-                                    end_time = time.time()
-                                    st.session_state.analysis_status = f"Completed in {end_time - st.session_state.analysis_start_time:.1f} seconds"
-                                    
-                                    # Update individual analyzer statuses
-                                    for analyzer_name, result in results.items():
-                                        if analyzer_name in st.session_state.analyzer_progress:
-                                            if result.get('success', False):
-                                                st.session_state.analyzer_progress[analyzer_name]['status'] = 'Completed'
-                                                st.session_state.analyzer_progress[analyzer_name]['progress'] = 100
-                                            else:
-                                                st.session_state.analyzer_progress[analyzer_name]['status'] = 'Failed'
-                            
-                            except Exception as e:
-                                if not st.session_state.get('analysis_cancelled', False):
-                                    st.session_state.analysis_error = str(e)
-                                    st.session_state.analysis_completed = True
-                        
-                        # Update UI with current progress
-                        current_progress = st.session_state.get('analysis_progress', 0)
-                        current_status = st.session_state.get('analysis_status', "Starting...")
-                        
-                        progress_bar.progress(current_progress)
-                        status_text.text(current_status)
-                        
-                        
-                        # Force UI refresh during analysis
-                        if not st.session_state.get('analysis_completed', False):
-                            time.sleep(0.5)  # Brief pause to allow UI updates
-                            st.rerun()
-                        
-                        # Check if analysis is completed
-                        if st.session_state.get('analysis_completed', False):
-                            # Analysis finished
-                            if 'analysis_results' in st.session_state:
-                                results = st.session_state.analysis_results
-                                successful = sum(1 for r in results.values() if r.get('success', False))
-                                cancelled = sum(1 for r in results.values() if r.get('cancelled', False))
-                                total = len(results)
-                                
-                                if cancelled > 0:
-                                    st.warning(f"⚠️ Analysis stopped: {successful}/{total} completed, {cancelled} cancelled")
-                                elif successful == total:
-                                    st.success(f"🎉 All {total} analyses completed successfully!")
-                                else:
-                                    st.warning(f"⚠️ {successful}/{total} analyses completed successfully")
-                            elif 'analysis_error' in st.session_state:
-                                st.error(f"Analysis failed: {st.session_state.analysis_error}")
-                            
-                            # Clean up
-                            st.session_state.analysis_running = False
-                            cleanup_keys = ['analysis_started', 'analysis_progress', 'analysis_status', 
-                                          'analysis_completed', 'analysis_start_time', 'analysis_thread', 'analysis_error',
-                                          'analysis_button_clicked', 'analyzer_progress']
-                            for key in cleanup_keys:
-                                if key in st.session_state:
-                                    del st.session_state[key]
-                            if 'analysis_cancelled' in st.session_state:
-                                del st.session_state.analysis_cancelled
-                            if 'analysis_token' in st.session_state:
-                                del st.session_state.analysis_token
-                            
-                            time.sleep(1)  # Brief pause to show results
-                            st.rerun()
-                        else:
-                            # Analysis still running, refresh every 1 second
-                            # Only rerun if analysis is actually running to avoid auto-start
-                            if st.session_state.get('analysis_started', False):
-                                time.sleep(1)
-                                st.rerun()
+            # Show count of selected analyses in the run button
+            selected_count = sum(1 for v in selected_analyses.values() if v)
             
-            # Show analysis results summary
-            if 'analysis_results' in st.session_state:
-                st.markdown("---")
-                st.subheader("📊 Analysis Results")
-                results = st.session_state.analysis_results
-                successful = sum(1 for r in results.values() if r.get('success', False))
-                total = len(results)
-                st.success(f"✅ Analysis Complete: {successful}/{total} successful")
-                
-                # Show brief status for each analyzer
-                for analyzer_name, result in results.items():
-                    if result.get('success', False):
-                        st.success(f"✅ {analyzer_name.replace('_', ' ').title()}")
-                    else:
-                        st.error(f"❌ {analyzer_name.replace('_', ' ').title()}: {result.get('error', 'Unknown error')}")
-                
-                if st.button("🗑️ Clear Results", key="clear_results"):
-                    del st.session_state.analysis_results
-                    st.rerun()
-        
-        # Legacy AI Analysis Section (kept for backward compatibility but hidden)
-        if False and 'repo_path' in st.session_state:
-            st.header("🤖 AI Analysis")
-            st.markdown("Generate AI insights for all tabs simultaneously")
+            # Debug: Show what's actually selected
+            print(f"DEBUG: UI Selection State: {selected_analyses}")
+            print(f"DEBUG: Selected count: {selected_count}")
             
-            # Show status of parallel analysis
-            if 'parallel_ai_results' in st.session_state:
-                results = st.session_state.parallel_ai_results
-                successful = sum(1 for r in results.values() if r.get('success', False))
-                total = len(results)
-                st.success(f"✅ AI Analysis Complete: {successful}/{total} successful")
-                
-                # Show brief status for each analyzer
-                for analyzer_name, result in results.items():
-                    if result.get('success', False):
-                        st.success(f"✅ {analyzer_name.replace('_', ' ').title()}")
-                    else:
-                        st.error(f"❌ {analyzer_name.replace('_', ' ').title()}: {result.get('error', 'Unknown error')}")
-            
-            # Selective AI analysis
-            st.subheader("🎯 Selective Analysis")
-            analysis_options = {
-                'expertise': '👥 Expertise Mapping',
-                'timeline': '📅 Timeline Analysis',
-                'api_contracts': '🔌 API Contracts',
-                'ai_context': '🤖 AI Context',
-                'risk_analysis': '⚠️ Risk Analysis',
-                'development_patterns': '🏗️ Development Patterns',
-                'version_governance': '📦 Version Governance',
-                'tech_debt': '🔧 Tech Debt Detection',
-                'design_patterns': '📐 Design Patterns'
-            }
-            
-            selected_analyses = st.multiselect(
-                "Select analyses to run:",
-                options=list(analysis_options.keys()),
-                format_func=lambda x: analysis_options[x],
-                default=list(analysis_options.keys())
-            )
-            
-            # Check if selective analysis is running
-            selective_running = st.session_state.get('selective_analysis_running', False)
-            
-            if not selective_running:
-                if st.button("🚀 Run Selected Analyses", key="selective_ai"):
-                    if selected_analyses:
-                        # Mark as running
-                        st.session_state.selective_analysis_running = True
-                        st.session_state.selective_analysis_token = f"selective_{int(time.time())}"
-                        st.rerun()
-                    else:
-                        st.warning("Please select at least one analysis to run")
-            else:
-                # Show progress and stop button (no columns in sidebar)
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                
-                if st.button("🛑 Stop Selected Analysis", key="stop_selective"):
-                    st.session_state.selective_analysis_cancelled = True
-                    st.warning("Stopping analysis...")
-                    st.rerun()
-                
-                # Run the analysis
-                if not st.session_state.get('selective_analysis_cancelled', False):
-                    parallel_analyzer = ParallelAIAnalyzer(st.session_state.repo_path)
-                    
-                    # Create cancellation token
-                    from analyzers.base_analyzer import CancellationToken
-                    token = CancellationToken(st.session_state.selective_analysis_token)
-                    parallel_analyzer.set_cancellation_token(token)
-                    
-                    # Filter analyzers to only selected ones
-                    filtered_analyzers = {
-                        key: analyzer for key, analyzer in parallel_analyzer.analyzers.items()
-                        if key in selected_analyses
-                    }
-                    parallel_analyzer.analyzers = filtered_analyzers
-                    
-                    # Progress callback
-                    def update_progress(completed, total, current_analyzer):
-                        progress = (completed / total) * 100
-                        progress_bar.progress(progress / 100.0)
-                        status_text.text(f"Analyzing {current_analyzer.replace('_', ' ').title()}... ({completed}/{total})")
-                    
-                    # Run selective analysis
-                    start_time = time.time()
-                    results = parallel_analyzer.run_parallel_analysis(progress_callback=update_progress)
-                    end_time = time.time()
-                    
-                    # Update progress
-                    progress_bar.progress(1.0)
-                    status_text.text(f"Completed in {end_time - start_time:.1f} seconds")
-                    
-                    # Merge with existing results
-                    if 'parallel_ai_results' not in st.session_state:
-                        st.session_state.parallel_ai_results = {}
-                    st.session_state.parallel_ai_results.update(results)
-                    
-                    # Show summary
-                    successful = sum(1 for r in results.values() if r.get('success', False))
-                    cancelled = sum(1 for r in results.values() if r.get('cancelled', False))
-                    total = len(results)
-                    
-                    if cancelled > 0:
-                        st.warning(f"⚠️ Analysis stopped: {successful}/{total} completed, {cancelled} cancelled")
-                    elif successful == total:
-                        st.success(f"🎉 All {total} selected analyses completed successfully!")
-                    else:
-                        st.warning(f"⚠️ {successful}/{total} analyses completed successfully")
-                    
-                    # Clean up
-                    st.session_state.selective_analysis_running = False
-                    if 'selective_analysis_cancelled' in st.session_state:
-                        del st.session_state.selective_analysis_cancelled
-                    if 'selective_analysis_token' in st.session_state:
-                        del st.session_state.selective_analysis_token
-                    
-                    time.sleep(2)  # Brief pause to show results
-                    st.rerun()
-                else:
-                    # Analysis was cancelled
-                    st.session_state.selective_analysis_running = False
-                    if 'selective_analysis_cancelled' in st.session_state:
-                        del st.session_state.selective_analysis_cancelled
-                    if 'selective_analysis_token' in st.session_state:
-                        del st.session_state.selective_analysis_token
-                    st.rerun()
-            
-            # Separator
             st.markdown("---")
-            
-            # Check if full analysis is running
-            full_running = st.session_state.get('full_analysis_running', False)
-            
-            if not full_running:
-                if st.button("🚀 Run All Analyses", key="parallel_ai"):
-                    # Mark as running
-                    st.session_state.full_analysis_running = True
-                    st.session_state.full_analysis_token = f"full_{int(time.time())}"
-                    st.rerun()
-            else:
-                # Show progress and stop button (no columns in sidebar)
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                
-                if st.button("🛑 Stop All Analysis", key="stop_full"):
-                    st.session_state.full_analysis_cancelled = True
-                    st.warning("Stopping analysis...")
-                    st.rerun()
-                
-                # Run the analysis
-                if not st.session_state.get('full_analysis_cancelled', False):
-                    parallel_analyzer = ParallelAIAnalyzer(st.session_state.repo_path)
+        else:
+            # When collapsed, get selected analyses from session state
+            selected_analyses = {}
+            analysis_options = {
+                'expertise': '👥 Team Expertise Mapping',
+                'timeline': '📅 Timeline Analysis',
+                'api_contracts': '🔗 API Contracts',
+                'ai_context': '🤖 AI Context Analysis',
+                'risk_analysis': '⚠️ Risk Analysis',
+                'development_patterns': '🔄 Development Patterns',
+                'version_governance': '📦 Version Governance',
+                'tech_debt': '🔧 Technical Debt Detection',
+                'design_patterns': '🏗️ Design Patterns',
+                'singular_product_vision': '🎯 Singular Product Vision'
+            }
+            # Get selections from session state
+            for key in analysis_options.keys():
+                selected_analyses[key] = st.session_state.get(f"selected_{key}", False)
+            selected_count = sum(1 for v in selected_analyses.values() if v)
+        
+        # Show run button only when expanded and not running
+        if not st.session_state.sidebar_collapsed:
+            if st.session_state.analysis_complete:
+                # Show completed analysis button and option to run new analysis
+                col1, col2 = st.columns([2, 1])
+                with col1:
+                    st.button("✅ Completed Analysis!", type="primary", use_container_width=True, disabled=True)
+                with col2:
+                    if st.button("🔄 New", type="secondary", use_container_width=True, help="Run new analysis"):
+                        st.session_state.analysis_complete = False
+                        st.session_state.results = {}
+                        st.rerun()
+            elif not st.session_state.analysis_running:
+                if st.button(f"🚀 Run {selected_count} Selected Analyses", type="primary", use_container_width=True):
+                    # Check if repository is properly loaded
+                    actual_repo_path = st.session_state.get('actual_repo_path', '')
+                    original_repo_path = st.session_state.get('last_repo_path', '')
                     
-                    # Create cancellation token
-                    from analyzers.base_analyzer import CancellationToken
-                    token = CancellationToken(st.session_state.full_analysis_token)
-                    parallel_analyzer.set_cancellation_token(token)
-                    
-                    # Progress callback
-                    def update_progress(completed, total, current_analyzer):
-                        progress = (completed / total) * 100
-                        progress_bar.progress(progress / 100.0)
-                        status_text.text(f"Analyzing {current_analyzer.replace('_', ' ').title()}... ({completed}/{total})")
-                    
-                    # Run parallel analysis
-                    start_time = time.time()
-                    results = parallel_analyzer.run_parallel_analysis(progress_callback=update_progress)
-                    end_time = time.time()
-                    
-                    # Update progress
-                    progress_bar.progress(1.0)
-                    status_text.text(f"Completed in {end_time - start_time:.1f} seconds")
-                    
-                    # Store results in session state
-                    st.session_state.parallel_ai_results = results
-                    
-                    # Show summary
-                    successful = sum(1 for r in results.values() if r.get('success', False))
-                    cancelled = sum(1 for r in results.values() if r.get('cancelled', False))
-                    total = len(results)
-                    
-                    if cancelled > 0:
-                        st.warning(f"⚠️ Analysis stopped: {successful}/{total} completed, {cancelled} cancelled")
-                    elif successful == total:
-                        st.success(f"🎉 All {total} AI analyses completed successfully!")
+                    if not original_repo_path or not original_repo_path.strip():
+                        st.error("Please enter a repository path and click Apply button to load it first!")
+                    elif not actual_repo_path or not actual_repo_path.strip():
+                        st.error("Repository not properly loaded. Please click Apply button to load the repository first!")
+                    elif not os.path.exists(actual_repo_path):
+                        st.error(f"Repository path does not exist: {actual_repo_path}")
+                    elif not any(selected_analyses.values()):
+                        st.error("Please select at least one analysis to run!")
                     else:
-                        st.warning(f"⚠️ {successful}/{total} analyses completed successfully")
+                        # Start the analysis
+                        st.session_state.analysis_running = True
+                        st.session_state.analysis_complete = False
+                        st.session_state.results = {}
+                        # Store selected analyses for the execution phase
+                        st.session_state.selected_analyses = selected_analyses
+                        st.rerun()
+            else:
+                # Show stop button when analysis is running with improved styling
+                if st.button(f"⛔ Stop Analysis", type="secondary", use_container_width=True, key="stop_analysis_btn"):
+                    # Immediately stop the analysis
+                    st.session_state.analysis_running = False
+                    st.session_state.analysis_complete = False
                     
-                    # Clean up
-                    st.session_state.full_analysis_running = False
-                    if 'full_analysis_cancelled' in st.session_state:
-                        del st.session_state.full_analysis_cancelled
-                    if 'full_analysis_token' in st.session_state:
-                        del st.session_state.full_analysis_token
+                    # Cancel the current analysis if it exists
+                    if st.session_state.cancellation_token:
+                        st.session_state.cancellation_token.cancel()
                     
-                    time.sleep(2)  # Brief pause to show results
+                    if st.session_state.current_analyzer and hasattr(st.session_state.current_analyzer, 'cancellation_token'):
+                        if st.session_state.current_analyzer.cancellation_token:
+                            st.session_state.current_analyzer.cancellation_token.cancel()
+                    
+                    # Cleanup Git repository if it was cloned
+                    if st.session_state.get('prepared_repo_info') and st.session_state.prepared_repo_info.get('temp_dir'):
+                        temp_dir = st.session_state.prepared_repo_info['temp_dir']
+                        if git_handler.cleanup_repository(temp_dir):
+                            print(f"DEBUG: Cleaned up temporary Git repository: {temp_dir}")
+                        st.session_state.prepared_repo_info = None
+                        st.session_state.actual_repo_path = ""
+                    
+                    # Clear analyzer reference
+                    st.session_state.current_analyzer = None
+                    st.session_state.cancellation_token = None
+                    
+                    # Show immediate feedback
+                    st.error("🛑 Analysis stopped by user!")
                     st.rerun()
-                else:
-                    # Analysis was cancelled
-                    st.session_state.full_analysis_running = False
-                    if 'full_analysis_cancelled' in st.session_state:
-                        del st.session_state.full_analysis_cancelled
-                    if 'full_analysis_token' in st.session_state:
-                        del st.session_state.full_analysis_token
-                    st.rerun()
+                
+                # Also add a disabled run button to show it's not available
+                st.button(f"🚀 Run {selected_count} Selected Analyses", type="primary", disabled=True, use_container_width=True, 
+                         help="Analysis is currently running. Click 'Stop Analysis' to cancel.")
+    
+    # Handle analysis execution
+    if st.session_state.analysis_running and not st.session_state.analysis_complete:
+        st.markdown("## 🔄 Analysis in Progress")
+        st.markdown("Running AI-powered analysis on your repository...")
+        
+        try:
+            # Get the actual local repository path (could be original local path or cloned Git repo path)
+            actual_repo_path = st.session_state.get('actual_repo_path', '')
+            original_repo_path = st.session_state.get('last_repo_path', '')
             
-            # Clear AI results button
-            if 'parallel_ai_results' in st.session_state:
-                if st.button("🗑️ Clear AI Results", key="clear_ai"):
-                    del st.session_state.parallel_ai_results
-                    st.rerun()
+            if not actual_repo_path or not actual_repo_path.strip():
+                st.error("Invalid repository path! Please enter a valid path in the sidebar and click Apply.")
+                st.session_state.analysis_running = False
+                st.rerun()
+            elif not os.path.exists(actual_repo_path):
+                st.error(f"Repository path does not exist: {actual_repo_path}")
+                st.session_state.analysis_running = False
+                st.rerun()
+            
+            # Create analyzer
+            analyzer = ParallelAIAnalyzer(actual_repo_path)
+            st.session_state.current_analyzer = analyzer
+            
+            # Create and set cancellation token
+            cancellation_token = CancellationToken()
+            st.session_state.cancellation_token = cancellation_token
+            analyzer.set_cancellation_token(cancellation_token)
+            
+            # Filter analyzers based on selection
+            if hasattr(st.session_state, 'selected_analyses') and st.session_state.selected_analyses:
+                # Filter to only run selected analyses
+                selected_analyzer_keys = [k for k, v in st.session_state.selected_analyses.items() if v]
+                if selected_analyzer_keys:
+                    # Only filter if there are actually selected analyzers
+                    print(f"DEBUG: Running {len(selected_analyzer_keys)} selected analyzers: {selected_analyzer_keys}")
+                    analyzer.analyzers = {
+                        k: v for k, v in analyzer.analyzers.items() 
+                        if k in selected_analyzer_keys
+                    }
+                else:
+                    # If no analyzers are explicitly selected, run all analyzers (DON'T FILTER)
+                    print(f"DEBUG: No analyzers selected, running all {len(analyzer.analyzers)} analyzers by default")
+            else:
+                # If no selection state exists, run all analyzers (DON'T FILTER)
+                print(f"DEBUG: No selection state found, running all {len(analyzer.analyzers)} analyzers by default")
+            
+            # Progress tracking
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            def progress_callback(completed, total, status):
+                # Check if analysis was stopped
+                if not st.session_state.analysis_running:
+                    return
+                progress = completed / total if total > 0 else 0
+                progress_bar.progress(progress)
+                status_text.text(f"Progress: {completed}/{total} - {status}")
+            
+            # Run analysis with immediate cancellation check
+            if st.session_state.analysis_running:  # Double-check before starting
+                with st.spinner("Running analysis..."):
+                    results = analyzer.run_parallel_analysis(progress_callback)
+            else:
+                # Analysis was cancelled before it could start
+                results = {}
+                for analyzer_name in analyzer.analyzers.keys():
+                    results[analyzer_name] = {
+                        "analyzer": analyzer_name,
+                        "error": "Operation was cancelled",
+                        "success": False,
+                        "cancelled": True
+                    }
+            
+            # Store results and complete
+            st.session_state.results = results
+            st.session_state.analysis_complete = True
+            st.session_state.analysis_running = False
+            st.session_state.current_analyzer = None
+            
+            progress_bar.progress(1.0)
+            status_text.text("Analysis complete!")
+            st.success("✅ Analysis completed successfully!")
+            st.rerun()
+            
+        except Exception as e:
+            st.error(f"Analysis failed: {str(e)}")
+            st.session_state.analysis_running = False
+            st.session_state.current_analyzer = None
     
     # Main content area
-    if 'repo_path' in st.session_state:
-        repo_path = st.session_state.repo_path
+    elif not st.session_state.analysis_complete:
+        st.markdown("## 🚀 Welcome to AI Codebase Analyzer")
         
-        # Get selected analyses from session state
-        selected_analyses = st.session_state.get('selected_analyses', [])
-        
-        if selected_analyses:
-            # Create tabs only for selected analyses
-            analysis_options = {
-                'expertise': '👥 Expertise Mapping',
-                'timeline': '📅 Timeline Analysis',
-                'api_contracts': '🔌 API Contracts',
-                'ai_context': '🤖 AI Context',
-                'risk_analysis': '⚠️ Risk Analysis',
-                'development_patterns': '🏗️ Development Patterns',
-                'version_governance': '📦 Version Governance',
-                'tech_debt': '🔧 Tech Debt Detection',
-                'design_patterns': '📐 Design Patterns'
-            }
-            
-            # Create tabs for selected analyses
-            tab_labels = [analysis_options[analysis] for analysis in selected_analyses]
-            tabs = st.tabs(tab_labels)
-            
-            # Render each selected analyzer
-            analyzer_classes = {
-                'expertise': ExpertiseMapper,
-                'timeline': TimelineAnalyzer,
-                'api_contracts': APIContractAnalyzer,
-                'ai_context': AIContextAnalyzer,
-                'risk_analysis': RiskAnalysisAnalyzer,
-                'development_patterns': DevelopmentPatternsAnalyzer,
-                'version_governance': VersionGovernanceAnalyzer,
-                'tech_debt': TechDebtDetectionAnalyzer,
-                'design_patterns': DesignPatternAnalyzer
-            }
-            
-            for i, analysis_key in enumerate(selected_analyses):
-                with tabs[i]:
-                    # Show individual analyzer status at the top of each tab
-                    if 'analyzer_progress' in st.session_state and analysis_key in st.session_state.analyzer_progress:
-                        analyzer_info = st.session_state.analyzer_progress[analysis_key]
-                        status = analyzer_info.get('status', 'Not Started')
-                        progress = analyzer_info.get('progress', 0)
-                        
-                        # Create status indicator at top of tab
-                        status_container = st.container()
-                        with status_container:
-                            if status == 'Completed':
-                                st.success(f"✅ Analysis Complete")
-                            elif status == 'Running':
-                                st.info(f"🔄 Analysis in Progress...")
-                                if progress > 0:
-                                    st.progress(progress / 100.0)
-                            elif status == 'Failed':
-                                st.error(f"❌ Analysis Failed")
-                            elif status == 'Queued':
-                                st.warning(f"⏳ Analysis Queued")
-                            else:
-                                st.info(f"📋 Ready to Analyze")
-                        
-                        st.markdown("---")
-                    
-                    # Show analysis results if available
-                    if 'analysis_results' in st.session_state and analysis_key in st.session_state.analysis_results:
-                        result = st.session_state.analysis_results[analysis_key]
-                        if result.get('success', False):
-                            # Render the analyzer with its data
-                            analyzer_class = analyzer_classes[analysis_key]
-                            analyzer = analyzer_class(repo_path)
-                            analyzer.render()
-                            
-                            # Show AI insights
-                            st.markdown("---")
-                            st.subheader("🤖 AI Insights")
-                            st.markdown(result['insight'])
-                        else:
-                            # Show error state
-                            st.error(f"Analysis failed: {result.get('error', 'Unknown error')}")
-                            st.info("Please try running the analysis again.")
-                    else:
-                        # Check if this analyzer is currently running in parallel analysis
-                        if ('analyzer_progress' in st.session_state and 
-                            analysis_key in st.session_state.analyzer_progress and 
-                            st.session_state.analyzer_progress[analysis_key].get('status') == 'Running'):
-                            
-                            # Show loading message for this specific analyzer
-                            analyzer_class = analyzer_classes[analysis_key]
-                            analyzer = analyzer_class(repo_path)
-                            
-                            # Create a loading message specific to this analyzer
-                            loading_messages = {
-                                'expertise': "Analyzing team expertise and knowledge distribution...",
-                                'timeline': "Analyzing project timeline and development patterns...",
-                                'api_contracts': "Analyzing API contracts and integration points...",
-                                'ai_context': "Analyzing codebase context for AI integration...",
-                                'risk_analysis': "Analyzing risks and test coverage...",
-                                'development_patterns': "Analyzing development patterns and code quality...",
-                                'version_governance': "Analyzing version governance and dependencies...",
-                                'tech_debt': "Analyzing technical debt and code complexity...",
-                                'design_patterns': "Analyzing design patterns and architecture..."
-                            }
-                            
-                            loading_message = loading_messages.get(analysis_key, f"Analyzing {analysis_key.replace('_', ' ')}...")
-                            
-                            # Show loading spinner and message
-                            with st.spinner(loading_message):
-                                st.info(f"🔄 {loading_message}")
-                            
-                            # Still render the analyzer interface in a disabled state
-                            st.markdown("*Analysis in progress... Results will appear here when complete.*")
-                            
-                        else:
-                            # Show placeholder when no analysis has been run yet
-                            analyzer_class = analyzer_classes[analysis_key]
-                            analyzer = analyzer_class(repo_path)
-                            
-                            # Check if this analyzer is currently selected for analysis
-                            if analysis_key in st.session_state.get('selected_analyses', []):
-                                st.info("👈 Click 'Run Selected Analyses' in the sidebar to analyze this repository.")
-                            
-                            # Still render the analyzer interface for manual use
-                            analyzer.render()
-        else:
-            # Show guidance when no analyses are selected
-            st.info("👈 Please select analyses to run from the sidebar to see the results here.")
-            
-            # Show available analysis types
-            st.markdown("### Available Analysis Types:")
-            
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.markdown("""
-                **👥 Expertise Mapping**
-                - Identify key contributors
-                - Knowledge distribution
-                - Team collaboration patterns
-                
-                **📅 Timeline Analysis**
-                - Project activity trends
-                - Development velocity
-                - Commit patterns
-                
-                **🔌 API Contracts**
-                - API endpoint analysis
-                - Integration points
-                - Contract validation
-                """)
-            
-            with col2:
-                st.markdown("""
-                **🤖 AI Context**
-                - AI integration opportunities
-                - Code structure analysis
-                - Implementation recommendations
-                
-                **⚠️ Risk Analysis**
-                - Security vulnerabilities
-                - Code quality risks
-                - Dependency issues
-                
-                **🏗️ Development Patterns**
-                - Code patterns analysis
-                - Best practices compliance
-                - Architecture insights
-                """)
-            
-            with col3:
-                st.markdown("""
-                **📦 Version Governance**
-                - Dependency management
-                - Version conflicts
-                - Update recommendations
-                
-                **🔧 Tech Debt Detection**
-                - Code complexity analysis
-                - Refactoring opportunities
-                - Maintenance priorities
-                
-                **📐 Design Patterns**
-                - Pattern usage analysis
-                - Architecture compliance
-                - Design recommendations
-                """)
-    else:
-        # Show welcome screen when no repository is selected
-        st.markdown("### 🚀 Welcome to AI Codebase Analyzer")
         st.markdown("""
         This tool helps you quickly understand and analyze any Git repository using AI-powered insights.
         
         **Getting Started:**
+        
         1. 👈 Enter your repository path in the sidebar
         2. 🎯 Select the analyses you want to run
         3. 🚀 Click "Run Selected Analyses" to get AI insights
         4. 📊 View results in the tabs that appear
         
         **What you'll get:**
-        - Deep insights into code structure and patterns
-        - Team expertise mapping and collaboration analysis
-        - Risk assessment and technical debt detection
-        - API contracts and integration analysis
-        - Timeline and development velocity insights
+        
+        • Deep insights into code structure and patterns
+        • Team expertise mapping and collaboration analysis  
+        • Risk assessment and technical debt detection
+        • API contracts and integration analysis
+        • Timeline and development velocity insights
         """)
         
-        # Show example repository paths
-        st.markdown("### 📁 Example Repository Paths:")
-        st.code("""
-        # Local repositories
-        C:\\Projects\\my-project
-        /home/user/projects/my-app
+    else:
+        # Show results in tabs
+        results = st.session_state.results
+        successful_results = {k: v for k, v in results.items() if v.get('success', False)}
         
-        # Current directory
-        .
+        if successful_results:
+            # Create tabs for successful analyses
+            tab_names = []
+            tab_data = []
+            
+            for analyzer_name, result in successful_results.items():
+                display_name = analyzer_name.replace('_', ' ').title()
+                tab_names.append(display_name)
+                tab_data.append((analyzer_name, result))
+            
+            tabs = st.tabs(tab_names)
+            
+            for i, (tab, (analyzer_name, result)) in enumerate(zip(tabs, tab_data)):
+                with tab:
+                    st.header(f"{analysis_options.get(analyzer_name, analyzer_name.replace('_', ' ').title())}")
+                    
+                    # First check if we should render with analyzer-specific UI
+                    analyzer_instance = None
+                    # Use actual_repo_path (could be local path or cloned Git repo path)
+                    actual_path = st.session_state.get('actual_repo_path', '')
+                    if actual_path and analyzer_name == 'timeline':
+                        analyzer_instance = TimelineAnalyzer(actual_path)
+                    elif actual_path and analyzer_name == 'expertise':
+                        analyzer_instance = ExpertiseMapper(actual_path)
+                    elif actual_path and analyzer_name == 'api_contracts':
+                        analyzer_instance = APIContractAnalyzer(actual_path)
+                    elif actual_path and analyzer_name == 'ai_context':
+                        analyzer_instance = AIContextAnalyzer(actual_path)
+                    elif actual_path and analyzer_name == 'risk_analysis':
+                        analyzer_instance = RiskAnalysisAnalyzer(actual_path)
+                    elif actual_path and analyzer_name == 'development_patterns':
+                        analyzer_instance = DevelopmentPatternsAnalyzer(actual_path)
+                    elif actual_path and analyzer_name == 'version_governance':
+                        analyzer_instance = VersionGovernanceAnalyzer(actual_path)
+                    elif actual_path and analyzer_name == 'tech_debt':
+                        analyzer_instance = TechDebtDetectionAnalyzer(actual_path)
+                    elif actual_path and analyzer_name == 'design_patterns':
+                        analyzer_instance = DesignPatternAnalyzer(actual_path)
+                    elif actual_path and analyzer_name == 'singular_product_vision':
+                        analyzer_instance = SingularProductVisionAnalyzer(actual_path)
+                    
+                    if analyzer_instance and hasattr(analyzer_instance, 'render'):
+                        # Store the analysis data in session state so the renderer can access it
+                        if 'analysis_data' in result:
+                            st.session_state[f"{analyzer_name}_analysis_data"] = result['analysis_data']
+                        # Render using the analyzer's custom renderer
+                        analyzer_instance.render()
+                    else:
+                        # Fallback to default rendering
+                        if 'insight' in result:
+                            st.markdown(result['insight'])
+                        else:
+                            st.error("No AI insight available for this analysis")
+                        
+                        # Show raw data in expander if available
+                        if 'analysis_data' in result:
+                            with st.expander("📊 Raw Analysis Data"):
+                                st.json(result['analysis_data'])
         
-        # Relative paths
-        ../other-project
-        ./subfolder/project
-        """)
+        # Show any failures (excluding cancelled operations)
+        failed_results = {k: v for k, v in results.items() 
+                         if not v.get('success', False) and not v.get('cancelled', False)}
+        if failed_results:
+            st.error("❌ Some analyses failed:")
+            for analyzer_name, result in failed_results.items():
+                st.error(f"**{analyzer_name.replace('_', ' ').title()}**: {result.get('error', 'Unknown error')}")
+        
+        # Show cancelled operations separately if any
+        cancelled_results = {k: v for k, v in results.items() if v.get('cancelled', False)}
+        if cancelled_results:
+            st.warning("⚠️ Some analyses were cancelled:")
+            for analyzer_name, result in cancelled_results.items():
+                st.info(f"**{analyzer_name.replace('_', ' ').title()}**: Operation was stopped by user")
+
+# Cleanup function to be called on app exit
+def cleanup_on_exit():
+    """Clean up any temporary Git repositories on app exit"""
+    try:
+        if hasattr(st.session_state, 'prepared_repo_info') and st.session_state.get('prepared_repo_info'):
+            if st.session_state.prepared_repo_info.get('temp_dir'):
+                temp_dir = st.session_state.prepared_repo_info['temp_dir']
+                if git_handler.cleanup_repository(temp_dir):
+                    print(f"DEBUG: Cleaned up temporary Git repository on exit: {temp_dir}")
+        
+        # Also cleanup any other temporary directories tracked by git_handler
+        git_handler.cleanup_all()
+    except Exception as e:
+        print(f"Warning: Error during cleanup on exit: {e}")
 
 if __name__ == "__main__":
+    # Register cleanup function
+    import atexit
+    atexit.register(cleanup_on_exit)
+    
     main()
