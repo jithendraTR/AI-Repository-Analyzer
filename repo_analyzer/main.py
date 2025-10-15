@@ -121,23 +121,45 @@ class ParallelAIAnalyzer:
                 }
             
             # Get AI insight with more frequent cancellation checks
-            insight = self.ai_client.query(prompt)
-            
-            # Final cancellation check
-            if self.cancellation_token and self.cancellation_token.is_cancelled():
+            try:
+                insight = self.ai_client.query(prompt)
+                
+                # Final cancellation check
+                if self.cancellation_token and self.cancellation_token.is_cancelled():
+                    return {
+                        "analyzer": analyzer_name,
+                        "error": "Operation was cancelled",
+                        "success": False,
+                        "cancelled": True
+                    }
+                
+                # If AI insight was successful, return with insight
+                if insight and insight.strip():
+                    return {
+                        "analyzer": analyzer_name,
+                        "insight": insight,
+                        "success": True,
+                        "analysis_data": analysis_data  # Include raw analysis data
+                    }
+                else:
+                    # AI insight failed but analysis data is still valid - mark as success
+                    return {
+                        "analyzer": analyzer_name,
+                        "insight": "⚠️ AI insight generation failed, but analysis data is available. Check the Raw Analysis Data section below for detailed results.",
+                        "success": True,  # Still mark as success!
+                        "analysis_data": analysis_data,  # Raw data is still valuable
+                        "ai_insight_failed": True
+                    }
+            except Exception as ai_error:
+                # AI insight failed but analysis data is still valid - mark as success
+                print(f"DEBUG: AI insight generation failed for {analyzer_name}: {ai_error}")
                 return {
                     "analyzer": analyzer_name,
-                    "error": "Operation was cancelled",
-                    "success": False,
-                    "cancelled": True
+                    "insight": f"⚠️ AI insight generation failed ({str(ai_error)}), but analysis data is available. Check the Raw Analysis Data section below for detailed results.",
+                    "success": True,  # Still mark as success!
+                    "analysis_data": analysis_data,  # Raw data is still valuable
+                    "ai_insight_failed": True
                 }
-            
-            return {
-                "analyzer": analyzer_name,
-                "insight": insight,
-                "success": True,
-                "analysis_data": analysis_data  # Include raw analysis data
-            }
         except Exception as e:
             # Check if it's a cancellation
             if "cancelled" in str(e).lower() or (self.cancellation_token and self.cancellation_token.is_cancelled()):
@@ -890,6 +912,10 @@ def main():
             # Show count of selected analyses in the run button
             selected_count = sum(1 for v in selected_analyses.values() if v)
             
+            # Debug: Show what's actually selected
+            print(f"DEBUG: UI Selection State: {selected_analyses}")
+            print(f"DEBUG: Selected count: {selected_count}")
+            
             st.markdown("---")
         else:
             # When collapsed, get selected analyses from session state
@@ -903,7 +929,8 @@ def main():
                 'development_patterns': '🔄 Development Patterns',
                 'version_governance': '📦 Version Governance',
                 'tech_debt': '🔧 Technical Debt Detection',
-                'design_patterns': '🏗️ Design Patterns'
+                'design_patterns': '🏗️ Design Patterns',
+                'singular_product_vision': '🎯 Singular Product Vision'
             }
             # Get selections from session state
             for key in analysis_options.keys():
@@ -1012,10 +1039,18 @@ def main():
                 # Filter to only run selected analyses
                 selected_analyzer_keys = [k for k, v in st.session_state.selected_analyses.items() if v]
                 if selected_analyzer_keys:
+                    # Only filter if there are actually selected analyzers
+                    print(f"DEBUG: Running {len(selected_analyzer_keys)} selected analyzers: {selected_analyzer_keys}")
                     analyzer.analyzers = {
                         k: v for k, v in analyzer.analyzers.items() 
                         if k in selected_analyzer_keys
                     }
+                else:
+                    # If no analyzers are explicitly selected, run all analyzers (DON'T FILTER)
+                    print(f"DEBUG: No analyzers selected, running all {len(analyzer.analyzers)} analyzers by default")
+            else:
+                # If no selection state exists, run all analyzers (DON'T FILTER)
+                print(f"DEBUG: No selection state found, running all {len(analyzer.analyzers)} analyzers by default")
             
             # Progress tracking
             progress_bar = st.progress(0)

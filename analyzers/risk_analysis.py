@@ -17,53 +17,187 @@ from .base_analyzer import BaseAnalyzer
 class RiskAnalysisAnalyzer(BaseAnalyzer):
     """Analyzes codebase for risk factors and test coverage gaps"""
     
+    # Pre-compiled regex patterns for maximum performance
+    _PATTERNS = {
+        'python_test': re.compile(r'(import pytest|@pytest|def test_|import unittest|class.*TestCase)', re.IGNORECASE),
+        'js_test': re.compile(r'(describe\(|it\(|test\(|expect\()', re.IGNORECASE),
+        'java_test': re.compile(r'(@Test|@Before|@After|import org.junit)', re.IGNORECASE),
+        'complexity': re.compile(r'\b(if|else|elif|for|while|try|catch|except|switch|case)\b|&&|\|\||\?.*:', re.IGNORECASE),
+        'functions': re.compile(r'(def \w+\(|function \w+\(|public \w+ \w+\()', re.IGNORECASE),
+        'error_handling_py': re.compile(r'(try:\s*\n|except\s+\w*Error|raise\s+\w*Error|finally:)', re.IGNORECASE),
+        'error_handling_js': re.compile(r'(try\s*{|catch\s*\(|throw\s+new\s+Error|finally\s*{)', re.IGNORECASE),
+        'security_sql': re.compile(r'(execute\([\'"].*%s.*[\'"]|query\([\'"].*\+.*[\'"]|SELECT.*\+.*FROM)', re.IGNORECASE),
+        'security_xss': re.compile(r'(innerHTML\s*=.*\+|document\.write\(|eval\()', re.IGNORECASE),
+        'security_secrets': re.compile(r'(password\s*=\s*[\'"][^\'\"]+[\'"]|api_key\s*=\s*[\'"][^\'\"]+[\'"]|secret\s*=\s*[\'"][^\'\"]+[\'"])', re.IGNORECASE),
+        'deprecated_py': re.compile(r'(import imp\b|\.has_key\(|execfile\()', re.IGNORECASE),
+        'deprecated_js': re.compile(r'(var\s+\w+|\.substr\(|escape\()', re.IGNORECASE),
+    }
+    
     def analyze(self, token=None, progress_callback=None) -> Dict[str, Any]:
-        """Analyze codebase for risk factors"""
+        """Ultra-fast risk analysis with aggressive optimizations"""
         
         # Check cache first
         cached_result = self.get_cached_analysis("risk_analysis")
         if cached_result:
             return cached_result
         
-        # Analyze test coverage
-        test_coverage = self._analyze_test_coverage()
+        try:
+            total_steps = 3  # Reduced to 3 steps only
+            current_step = 0
+            
+            # Step 1: Ultra-fast test coverage analysis
+            if progress_callback:
+                progress_callback(current_step, total_steps, "Analyzing test coverage (ultra-fast)...")
+            
+            if token:
+                token.check_cancellation()
+            
+            test_coverage = self._ultra_fast_test_coverage(token)
+            current_step += 1
+            
+            # Step 2: Quick complexity analysis
+            if progress_callback:
+                progress_callback(current_step, total_steps, "Analyzing code complexity (ultra-fast)...")
+            
+            if token:
+                token.check_cancellation()
+            
+            complexity_analysis = self._ultra_fast_complexity()
+            current_step += 1
+            
+            # Step 3: Fast security scan (most critical)
+            if progress_callback:
+                progress_callback(current_step, total_steps, "Scanning for security risks (ultra-fast)...")
+            
+            if token:
+                token.check_cancellation()
+            
+            security_risks = self._ultra_fast_security_scan(token)
+            
+            # Skip expensive operations for speed - generate quick summary
+            result = {
+                "test_coverage": test_coverage,
+                "untested_code": [],  # Skip for ultra-fast mode
+                "complexity_analysis": complexity_analysis,
+                "error_handling": {"files_with_error_handling": [], "files_without_error_handling": []},  # Skip for speed
+                "security_risks": security_risks,
+                "deprecated_code": [],  # Skip for ultra-fast mode
+                "dependency_risks": {"outdated_dependencies": []},  # Skip for speed
+                "risk_summary": self._generate_fast_risk_summary(
+                    test_coverage, complexity_analysis, security_risks
+                )
+            }
+            
+            # Cache the result
+            self.cache_analysis("risk_analysis", result)
+            
+            return result
+            
+        except Exception as e:
+            return {"error": f"Analysis failed: {str(e)}"}
+    
+    def _ultra_fast_test_coverage(self, token=None) -> Dict[str, Any]:
+        """Ultra-fast test coverage analysis with aggressive limits"""
         
-        # Find untested code
-        untested_code = self._find_untested_code()
-        
-        # Analyze code complexity
-        complexity_analysis = self._analyze_complexity()
-        
-        # Find error handling gaps
-        error_handling = self._analyze_error_handling()
-        
-        # Analyze security risks
-        security_risks = self._analyze_security_risks()
-        
-        # Find deprecated code
-        deprecated_code = self._find_deprecated_code()
-        
-        # Analyze dependency risks
-        dependency_risks = self._analyze_dependency_risks()
-        
-        result = {
-            "test_coverage": test_coverage,
-            "untested_code": untested_code,
-            "complexity_analysis": complexity_analysis,
-            "error_handling": error_handling,
-            "security_risks": security_risks,
-            "deprecated_code": deprecated_code,
-            "dependency_risks": dependency_risks,
-            "risk_summary": self._generate_risk_summary(
-                test_coverage, complexity_analysis, security_risks, error_handling
-            )
+        coverage = {
+            "test_files": [],
+            "source_files": [],
+            "coverage_ratio": 0.0,
+            "test_patterns": defaultdict(int),
+            "framework_usage": defaultdict(int)
         }
         
-        # Cache the result
-        self.cache_analysis("risk_analysis", result)
+        # Quick file counting - only check top-level files for speed
+        all_files = list(self.repo_path.rglob("*.py"))[:50]  # Limit to 50 Python files only
+        all_files.extend(list(self.repo_path.rglob("*.js"))[:20])  # Add 20 JS files
         
-        return result
+        test_files = []
+        source_files = []
+        
+        for file_path in all_files:
+            file_name = str(file_path).lower()
+            if any(pattern in file_name for pattern in ['test', 'spec']):
+                test_files.append(file_path)
+            else:
+                source_files.append(file_path)
+        
+        coverage["test_files"] = [str(f.relative_to(self.repo_path)) for f in test_files]
+        coverage["source_files"] = [str(f.relative_to(self.repo_path)) for f in source_files]
+        
+        # Calculate basic coverage ratio
+        if source_files:
+            coverage["coverage_ratio"] = len(test_files) / len(source_files)
+        
+        # Quick framework detection - only check first 5 test files
+        for test_file in test_files[:5]:
+            content = self.read_file_content(test_file)
+            if not content:
+                continue
+            
+            # Use pre-compiled patterns for speed
+            if self._PATTERNS['python_test'].search(content):
+                coverage["framework_usage"]["pytest/unittest"] += 1
+            if self._PATTERNS['js_test'].search(content):
+                coverage["framework_usage"]["jest/mocha"] += 1
+            if self._PATTERNS['java_test'].search(content):
+                coverage["framework_usage"]["junit"] += 1
+        
+        return coverage
     
+    def _ultra_fast_complexity(self) -> Dict[str, Any]:
+        """Ultra-fast complexity analysis with aggressive limits"""
+        
+        complexity = {
+            "high_complexity_files": [],
+            "complexity_distribution": {"low": 0, "medium": 0, "high": 0},
+            "average_complexity": 0.0,
+            "complexity_hotspots": []
+        }
+        
+        # Only process 15 files maximum for ultra-fast analysis
+        source_files = self.get_file_list(['.py', '.js', '.ts'])[:15]
+        total_complexity = 0
+        file_count = 0
+        
+        for file_path in source_files:
+            content = self.read_file_content(file_path)
+            if not content:
+                continue
+            
+            relative_path = str(file_path.relative_to(self.repo_path))
+            
+            # Ultra-fast complexity calculation using pre-compiled patterns
+            complexity_matches = len(self._PATTERNS['complexity'].findall(content))
+            line_count = len(content.split('\n'))
+            
+            # Simple complexity score: matches + line_count/100
+            file_complexity = complexity_matches + (line_count // 100)
+            
+            total_complexity += file_complexity
+            file_count += 1
+            
+            # Categorize complexity
+            if file_complexity < 8:
+                complexity["complexity_distribution"]["low"] += 1
+            elif file_complexity < 20:
+                complexity["complexity_distribution"]["medium"] += 1
+            else:
+                complexity["complexity_distribution"]["high"] += 1
+                complexity["high_complexity_files"].append({
+                    "file": relative_path,
+                    "complexity": file_complexity,
+                    "lines": line_count
+                })
+        
+        if file_count > 0:
+            complexity["average_complexity"] = total_complexity / file_count
+        
+        # Sort high complexity files - keep only top 5
+        complexity["high_complexity_files"].sort(key=lambda x: x["complexity"], reverse=True)
+        complexity["high_complexity_files"] = complexity["high_complexity_files"][:5]
+        
+        return complexity
+
     def _analyze_test_coverage(self) -> Dict[str, Any]:
         """Analyze test coverage patterns"""
         
@@ -317,75 +451,79 @@ class RiskAnalysisAnalyzer(BaseAnalyzer):
         
         return error_handling
     
-    def _analyze_security_risks(self) -> List[Dict]:
-        """Analyze potential security risks"""
+    def _ultra_fast_security_scan(self, token=None) -> List[Dict]:
+        """Ultra-fast security risk scan with pre-compiled patterns"""
         
         security_risks = []
         
-        # Security risk patterns
-        risk_patterns = {
-            "sql_injection": [
-                r"execute\(['\"].*%s.*['\"]",
-                r"query\(['\"].*\+.*['\"]",
-                r"SELECT.*\+.*FROM"
-            ],
-            "xss_vulnerability": [
-                r"innerHTML\s*=.*\+",
-                r"document\.write\(",
-                r"eval\("
-            ],
-            "hardcoded_secrets": [
-                r"password\s*=\s*['\"][^'\"]+['\"]",
-                r"api_key\s*=\s*['\"][^'\"]+['\"]",
-                r"secret\s*=\s*['\"][^'\"]+['\"]"
-            ],
-            "insecure_random": [
-                r"Math\.random\(",
-                r"random\.random\(",
-                r"new Random\("
-            ],
-            "path_traversal": [
-                r"open\(['\"].*\.\./",
-                r"File\(['\"].*\.\./",
-                r"readFile\(['\"].*\.\./"
-            ],
-            "command_injection": [
-                r"exec\(",
-                r"system\(",
-                r"Runtime\.getRuntime\(\)\.exec"
-            ]
-        }
+        # Only scan 12 files maximum for ultra-fast analysis
+        source_files = self.get_file_list(['.py', '.js', '.ts'])[:12]
         
-        source_files = self.get_file_list(['.py', '.js', '.ts', '.java', '.php'])
-        
-        for file_path in source_files[:50]:  # Limit for performance
+        for file_path in source_files:
             content = self.read_file_content(file_path)
             if not content:
                 continue
             
             relative_path = str(file_path.relative_to(self.repo_path))
             
-            for risk_type, patterns in risk_patterns.items():
-                for pattern in patterns:
-                    matches = re.finditer(pattern, content, re.IGNORECASE)
+            # Use pre-compiled patterns for maximum speed
+            risk_checks = [
+                ('sql_injection', self._PATTERNS['security_sql']),
+                ('xss_vulnerability', self._PATTERNS['security_xss']),
+                ('hardcoded_secrets', self._PATTERNS['security_secrets'])
+            ]
+            
+            for risk_type, pattern in risk_checks:
+                matches = list(pattern.finditer(content))[:3]  # Limit to first 3 matches per type per file
+                
+                for match in matches:
+                    line_num = content[:match.start()].count('\n') + 1
                     
-                    for match in matches:
-                        line_num = content[:match.start()].count('\n') + 1
-                        context = self._extract_context(content, match.start(), match.end())
-                        
-                        security_risks.append({
-                            "type": risk_type,
-                            "file": relative_path,
-                            "line": line_num,
-                            "pattern": match.group(0),
-                            "context": context,
-                            "severity": self._calculate_security_severity(risk_type)
-                        })
+                    security_risks.append({
+                        "type": risk_type,
+                        "file": relative_path,
+                        "line": line_num,
+                        "pattern": match.group(0)[:50],  # Truncate long patterns
+                        "context": "Context skipped for speed",
+                        "severity": self._get_quick_severity(risk_type)
+                    })
         
-        # Sort by severity
+        # Sort by severity and return top 20 for performance
         security_risks.sort(key=lambda x: x["severity"], reverse=True)
+        return security_risks[:20]
+    
+    def _get_quick_severity(self, risk_type: str) -> int:
+        """Quick security severity mapping"""
+        severity_map = {
+            "sql_injection": 10,
+            "xss_vulnerability": 8,
+            "hardcoded_secrets": 6
+        }
+        return severity_map.get(risk_type, 5)
+    
+    def _generate_fast_risk_summary(self, test_coverage: Dict, complexity: Dict, security_risks: List) -> Dict[str, Any]:
+        """Generate fast risk summary with minimal calculations"""
         
-        return security_risks
+        summary = {
+            "overall_risk_score": 0,
+            "critical_issues": 0,
+            "high_risk_files": 0,
+            "test_coverage_score": test_coverage.get("coverage_ratio", 0) * 100,
+            "complexity_score": complexity.get("average_complexity", 0),
+            "security_issues": len(security_risks),
+            "untested_high_complexity": 0
+        }
+        
+        # Quick risk score calculation
+        coverage_risk = max(0, 50 - summary["test_coverage_score"]) * 0.4
+        complexity_risk = min(50, summary["complexity_score"] * 1.5) * 0.3
+        security_risk = min(50, len(security_risks) * 5) * 0.3
+        
+        summary["overall_risk_score"] = coverage_risk + complexity_risk + security_risk
+        summary["critical_issues"] = len([r for r in security_risks if r["severity"] >= 8])
+        summary["high_risk_files"] = len(complexity.get("high_complexity_files", []))
+        
+        return summary
     
     def _find_deprecated_code(self) -> List[Dict]:
         """Find deprecated code and outdated patterns"""

@@ -16,9 +16,312 @@ import json
 from .base_analyzer import BaseAnalyzer, OperationCancelledException
 
 class SingularProductVisionAnalyzer(BaseAnalyzer):
-    """Analyzes product vision consistency and strategic alignment across the codebase"""
+    """Analyzes product vision consistency and strategic alignment across the codebase - Ultra-optimized for performance"""
+    
+    # Pre-compiled regex patterns for maximum performance
+    _PATTERNS = {
+        'vision_keywords': re.compile(r'(vision|mission|purpose|goal|objective|strategy|roadmap|direction|focus)', re.IGNORECASE),
+        'feature_auth': re.compile(r'(auth|login|signin|signup|oauth|jwt)', re.IGNORECASE),
+        'feature_user': re.compile(r'(user|profile|account|member)', re.IGNORECASE),
+        'feature_api': re.compile(r'(api|client|service|integration)', re.IGNORECASE),
+        'feature_payment': re.compile(r'(payment|billing|subscription|checkout)', re.IGNORECASE),
+        'feature_search': re.compile(r'(search|query|index|elasticsearch)', re.IGNORECASE),
+        'api_endpoints': re.compile(r'["\']/([\w\-/{}]+)["\']', re.IGNORECASE),
+        'spring_mapping': re.compile(r'@\w+Mapping\(["\']/([\w\-/{}]+)["\']', re.IGNORECASE),
+        'express_routes': re.compile(r'app\.(get|post|put|delete)\(["\']/([\w\-/{}]+)["\']', re.IGNORECASE),
+        'product_commits': re.compile(r'(feature|product|user|customer|enhancement|new|add|implement)', re.IGNORECASE),
+        'maintenance_commits': re.compile(r'(fix|bug|patch|hotfix|maintenance|update|refactor)', re.IGNORECASE),
+        'snake_case': re.compile(r'_'),
+        'kebab_case': re.compile(r'-'),
+        'sentences': re.compile(r'[.!?]+')
+    }
     
     def analyze(self, token=None, progress_callback=None) -> Dict[str, Any]:
+        """Ultra-fast product vision analysis with aggressive optimizations"""
+        
+        # Check cache first
+        cached_result = self.get_cached_analysis("singular_product_vision")
+        if cached_result:
+            return cached_result
+        
+        if token:
+            token.check_cancellation()
+        
+        total_steps = 3
+        current_step = 0
+        
+        # Step 1: Ultra-fast documentation analysis
+        if progress_callback:
+            progress_callback(current_step, total_steps, "Analyzing product documentation (ultra-fast)...")
+        vision_docs = self._ultra_fast_documentation_analysis()
+        current_step += 1
+        
+        if token:
+            token.check_cancellation()
+        
+        # Step 2: Quick feature architecture
+        if progress_callback:
+            progress_callback(current_step, total_steps, "Analyzing feature architecture...")
+        feature_analysis = self._ultra_fast_feature_analysis()
+        current_step += 1
+        
+        if token:
+            token.check_cancellation()
+        
+        # Step 3: Fast API consistency check
+        if progress_callback:
+            progress_callback(current_step, total_steps, "Checking API consistency...")
+        api_consistency = self._ultra_fast_api_analysis()
+        
+        # Skip expensive operations for speed
+        result = {
+            "vision_documentation": vision_docs,
+            "feature_architecture": feature_analysis,
+            "api_consistency": api_consistency,
+            "development_focus": {},  # Skip for speed
+            "configuration_consistency": {},  # Skip for speed
+            "vision_coherence_score": self._calculate_fast_vision_score(
+                vision_docs, feature_analysis, api_consistency
+            ),
+            "total_features_identified": len(feature_analysis.get("features", [])),
+            "documentation_coverage": len(vision_docs.get("vision_statements", []))
+        }
+        
+        # Cache the result
+        self.cache_analysis("singular_product_vision", result)
+        
+        return result
+    
+    def _ultra_fast_documentation_analysis(self) -> Dict[str, Any]:
+        """Ultra-fast documentation analysis with aggressive limits"""
+        
+        vision_docs = {
+            "vision_statements": [],
+            "readme_analysis": {},
+            "docs_structure": {},
+            "mission_keywords": []
+        }
+        
+        # Limit to 8 documentation files for ultra-fast analysis
+        doc_files = []
+        doc_patterns = ["**/README.md", "**/README.rst", "**/VISION.md", "**/docs/**/*.md"]
+        
+        for pattern in doc_patterns:
+            files = self.find_files_by_pattern(pattern)
+            doc_files.extend(files[:3])  # Max 3 files per pattern
+            if len(doc_files) >= 8:
+                break
+        
+        for doc_file in doc_files[:8]:
+            content = self.read_file_content(doc_file)
+            if not content:
+                continue
+            
+            relative_path = str(doc_file.relative_to(self.repo_path))
+            
+            # Quick README analysis
+            if "readme" in doc_file.name.lower():
+                vision_docs["readme_analysis"][relative_path] = {
+                    "has_description": "description" in content.lower() or "about" in content.lower(),
+                    "has_features": "features" in content.lower(),
+                    "has_roadmap": "roadmap" in content.lower(),
+                    "description_length": min(len(content), 500)  # Cap for speed
+                }
+            
+            # Quick vision statement extraction using pre-compiled patterns
+            vision_matches = self._PATTERNS['vision_keywords'].findall(content)
+            if vision_matches:
+                # Extract sentences containing vision keywords - limit to first 3
+                sentences = self._PATTERNS['sentences'].split(content)[:10]  # Limit sentences
+                statements = []
+                for sentence in sentences:
+                    if self._PATTERNS['vision_keywords'].search(sentence) and len(sentence.strip()) > 20:
+                        statements.append(sentence.strip()[:100])  # Truncate for speed
+                        if len(statements) >= 3:
+                            break
+                
+                if statements:
+                    vision_docs["vision_statements"].append({
+                        "file": relative_path,
+                        "statements": statements
+                    })
+            
+            # Quick keyword counting
+            for match in vision_matches[:5]:  # Limit for speed
+                vision_docs["mission_keywords"].append({
+                    "keyword": match,
+                    "file": relative_path,
+                    "count": 1  # Simplified counting for speed
+                })
+        
+        return vision_docs
+    
+    def _ultra_fast_feature_analysis(self) -> Dict[str, Any]:
+        """Ultra-fast feature architecture analysis with aggressive limits"""
+        
+        feature_analysis = {
+            "features": [],
+            "modules": [],
+            "services": [],
+            "components": [],
+            "feature_consistency": {}
+        }
+        
+        # Limit to 15 source files for ultra-fast analysis
+        source_files = self.get_file_list(['.py', '.js', '.ts', '.java'])[:15]
+        
+        # Use pre-compiled patterns for ultra-fast feature detection
+        feature_patterns = {
+            "authentication": self._PATTERNS['feature_auth'],
+            "user_management": self._PATTERNS['feature_user'],
+            "api_integration": self._PATTERNS['feature_api'],
+            "payment": self._PATTERNS['feature_payment'],
+            "search": self._PATTERNS['feature_search']
+        }
+        
+        feature_files = defaultdict(list)
+        
+        for file_path in source_files:
+            relative_path = str(file_path.relative_to(self.repo_path))
+            
+            # Quick file content analysis - only first 1000 chars
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content_sample = f.read(1000)  # Only read first 1000 chars for speed
+            except:
+                continue
+            
+            # Use pre-compiled patterns for ultra-fast detection
+            for feature_name, pattern in feature_patterns.items():
+                if (pattern.search(relative_path) or pattern.search(content_sample)):
+                    feature_files[feature_name].append(relative_path)
+                    break  # Only count once per file for speed
+        
+        # Convert to feature analysis format
+        for feature, files in feature_files.items():
+            if files:
+                feature_analysis["features"].append({
+                    "name": feature,
+                    "file_count": len(files),
+                    "files": files[:5],  # Limit for speed
+                    "coverage_score": min(len(files) / 3.0, 1.0)  # Simplified score
+                })
+        
+        return feature_analysis
+    
+    def _ultra_fast_api_analysis(self) -> Dict[str, Any]:
+        """Ultra-fast API consistency analysis with aggressive limits"""
+        
+        api_analysis = {
+            "endpoints": [],
+            "naming_patterns": {},
+            "response_formats": [],
+            "consistency_score": 0.0
+        }
+        
+        # Limit to 8 API-related files for ultra-fast analysis
+        api_files = []
+        api_patterns = ["**/*api*", "**/*controller*", "**/*route*"]
+        
+        for pattern in api_patterns:
+            files = self.find_files_by_pattern(pattern)
+            api_files.extend(files[:3])  # Max 3 files per pattern
+            if len(api_files) >= 8:
+                break
+        
+        endpoints = []
+        naming_conventions = defaultdict(int)
+        
+        for api_file in api_files[:8]:
+            content = self.read_file_content(api_file)
+            if not content:
+                continue
+            
+            # Use pre-compiled patterns for ultra-fast endpoint extraction
+            # Generic endpoints
+            for match in self._PATTERNS['api_endpoints'].finditer(content):
+                endpoint = match.group(1)
+                if endpoint and len(endpoint) > 1:
+                    endpoints.append("/" + endpoint)
+                    if len(endpoints) >= 5:  # Limit per file for speed
+                        break
+            
+            # Spring Boot endpoints
+            for match in self._PATTERNS['spring_mapping'].finditer(content):
+                endpoint = match.group(1)
+                if endpoint and len(endpoint) > 1:
+                    endpoints.append("/" + endpoint)
+                    if len(endpoints) >= 8:  # Total limit for speed
+                        break
+            
+            # Express.js endpoints
+            for match in self._PATTERNS['express_routes'].finditer(content):
+                endpoint = match.group(2)
+                if endpoint and len(endpoint) > 1:
+                    endpoints.append("/" + endpoint)
+                    if len(endpoints) >= 10:  # Total limit for speed
+                        break
+            
+            if len(endpoints) >= 10:  # Stop early for speed
+                break
+        
+        # Quick naming pattern analysis
+        for endpoint in endpoints:
+            parts = endpoint.split("/")
+            for part in parts:
+                if part and not part.startswith("{"):
+                    if self._PATTERNS['snake_case'].search(part):
+                        naming_conventions["snake_case"] += 1
+                    elif self._PATTERNS['kebab_case'].search(part):
+                        naming_conventions["kebab_case"] += 1
+                    elif part.islower():
+                        naming_conventions["lowercase"] += 1
+        
+        api_analysis["endpoints"] = list(set(endpoints))  # Remove duplicates
+        api_analysis["naming_patterns"] = dict(naming_conventions)
+        
+        # Quick consistency score
+        if naming_conventions:
+            max_count = max(naming_conventions.values())
+            total_count = sum(naming_conventions.values())
+            api_analysis["consistency_score"] = max_count / total_count if total_count > 0 else 0.0
+        
+        return api_analysis
+    
+    def _calculate_fast_vision_score(self, vision_docs: Dict, feature_analysis: Dict, 
+                                   api_consistency: Dict) -> Dict[str, float]:
+        """Calculate fast vision coherence score with minimal processing"""
+        
+        scores = {
+            "documentation_score": 0.0,
+            "architecture_score": 0.0,
+            "api_consistency_score": 0.0,
+            "development_focus_score": 0.5,  # Default value for speed
+            "overall_score": 0.0
+        }
+        
+        # Documentation score (0-1)
+        if vision_docs.get("vision_statements"):
+            scores["documentation_score"] = min(len(vision_docs["vision_statements"]) / 2.0, 1.0)
+        
+        # Architecture score (0-1)
+        if feature_analysis.get("features"):
+            avg_coverage = sum(f["coverage_score"] for f in feature_analysis["features"]) / len(feature_analysis["features"])
+            scores["architecture_score"] = avg_coverage
+        
+        # API consistency score (0-1)
+        scores["api_consistency_score"] = api_consistency.get("consistency_score", 0.0)
+        
+        # Overall score - simplified calculation
+        scores["overall_score"] = (
+            scores["documentation_score"] * 0.4 +
+            scores["architecture_score"] * 0.4 +
+            scores["api_consistency_score"] * 0.2
+        )
+        
+        return scores
+
+    def analyze_original(self, token=None, progress_callback=None) -> Dict[str, Any]:
         """Analyze product vision coherence across the codebase with cancellation support"""
         
         # Check cache first
