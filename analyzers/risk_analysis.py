@@ -1156,41 +1156,6 @@ class RiskAnalysisAnalyzer(BaseAnalyzer):
         else:
             st.info("No dependency files found or no issues detected")
         
-        # AI-powered Risk Assessment
-        st.subheader("🤖 AI Risk Assessment")
-        
-        if st.button("Get AI Risk Analysis"):
-            with self.display_loading_message("Generating AI risk assessment..."):
-                # Prepare context for AI
-                risk_context = {
-                    "overall_risk_score": risk_summary["overall_risk_score"],
-                    "critical_issues": risk_summary["critical_issues"],
-                    "test_coverage": risk_summary["test_coverage_score"],
-                    "high_complexity_files": len(complexity_analysis["high_complexity_files"]),
-                    "security_risks": len(security_risks),
-                    "files_without_error_handling": files_without_handling
-                }
-                
-                prompt = f"""
-                Based on this codebase risk analysis:
-                
-                Risk Metrics: {risk_context}
-                
-                Please provide:
-                1. Overall risk assessment and priority areas
-                2. Specific recommendations to reduce risk
-                3. Testing strategy suggestions
-                4. Security improvement recommendations
-                5. Code quality improvement plan
-                """
-                
-                ai_assessment = self.ai_client.query(prompt)
-                
-                if ai_assessment:
-                    st.markdown("**AI Risk Assessment:**")
-                    st.markdown(ai_assessment)
-                else:
-                    st.error("Failed to generate AI risk assessment")
         
         # Add save options
         self.add_save_options("risk_analysis", analysis)

@@ -1139,41 +1139,6 @@ class VersionGovernanceAnalyzer(BaseAnalyzer):
             else:
                 st.success("No vulnerable packages detected")
         
-        # AI-powered Governance Analysis
-        st.subheader("🤖 AI Governance Insights")
-        
-        if st.button("Get AI Governance Recommendations"):
-            with self.display_loading_message("Generating governance recommendations..."):
-                # Prepare context for AI
-                governance_context = {
-                    "total_dependencies": governance_summary["total_dependencies"],
-                    "governance_score": governance_summary["governance_score"],
-                    "package_managers": governance_summary["package_managers"],
-                    "version_strategy": governance_summary["version_strategy"],
-                    "conflicts": len(version_conflicts["version_mismatches"]),
-                    "security_risks": len(security_analysis["vulnerable_packages"])
-                }
-                
-                prompt = f"""
-                Based on this dependency governance analysis:
-                
-                Governance Summary: {governance_context}
-                
-                Please provide:
-                1. Assessment of current dependency management practices
-                2. Recommendations for improving version governance
-                3. Security vulnerability mitigation strategies
-                4. Best practices for dependency updates
-                5. Package manager optimization suggestions
-                """
-                
-                ai_insights = self.ai_client.query(prompt)
-                
-                if ai_insights:
-                    st.markdown("**AI Governance Recommendations:**")
-                    st.markdown(ai_insights)
-                else:
-                    st.error("Failed to generate governance recommendations")
         
         # Display AI insights from parallel analysis if available
         self.display_parallel_ai_insights("version_governance")

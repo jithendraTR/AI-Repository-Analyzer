@@ -1578,42 +1578,6 @@ class APIContractAnalyzer(BaseAnalyzer):
         else:
             st.info("No OpenAPI specifications found")
         
-        # AI-powered insights
-        st.subheader("🤖 AI Contract Insights")
-        
-        if st.button("Generate API Contract Insights"):
-            with self.display_loading_message("Generating AI insights..."):
-                # Prepare contract summary for AI
-                contract_summary = {
-                    "rest_endpoints": summary["total_rest_endpoints"],
-                    "graphql_types": summary["total_graphql_types"],
-                    "database_entities": summary["total_db_tables"] + summary["total_db_models"],
-                    "external_services": summary["external_services"],
-                    "frameworks": summary["frameworks_detected"],
-                    "messaging_patterns": summary["total_messaging_patterns"]
-                }
-                
-                prompt = f"""
-                Analyze this API contract and integration data:
-                
-                {contract_summary}
-                
-                Please provide:
-                1. API architecture assessment
-                2. Integration complexity analysis
-                3. Potential contract versioning issues
-                4. Security considerations for external integrations
-                5. Recommendations for API governance and documentation
-                6. Suggestions for improving integration patterns
-                """
-                
-                insights = self.ai_client.query(prompt)
-                
-                if insights:
-                    st.markdown("**AI-Generated Contract Insights:**")
-                    st.markdown(insights)
-                else:
-                    st.error("Failed to generate AI insights")
         
         # Integration Complexity Scoring Features
         st.subheader("🎯 Integration Complexity Scoring")

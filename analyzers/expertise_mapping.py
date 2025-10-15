@@ -569,42 +569,6 @@ class ExpertiseMapper(BaseAnalyzer):
         else:
             st.info("No recent activity found in the last 30 days")
         
-        # AI-powered insights
-        st.subheader("🤖 AI Insights")
-        
-        if st.button("Generate Expertise Insights"):
-            with self.display_loading_message("Generating AI insights..."):
-                # Prepare data for AI analysis
-                expertise_summary = {
-                    "total_contributors": analysis["total_contributors"],
-                    "top_technologies": list(analysis["tech_expertise"].keys())[:5],
-                    "most_active_files": [f[0] for f in sorted(
-                        [(f, sum(c.values())) for f, c in analysis["file_expertise"].items()],
-                        key=lambda x: x[1], reverse=True
-                    )[:5]],
-                    "recent_activity": analysis["recent_activity"]
-                }
-                
-                prompt = f"""
-                Analyze this developer expertise data and provide insights:
-                
-                {expertise_summary}
-                
-                Please provide:
-                1. Key expertise areas in the team
-                2. Potential knowledge silos or bus factor risks
-                3. Recommendations for knowledge sharing
-                4. Areas that might need more expertise
-                5. Team collaboration patterns
-                """
-                
-                insights = self.ai_client.query(prompt)
-                
-                if insights:
-                    st.markdown("**AI-Generated Insights:**")
-                    st.markdown(insights)
-                else:
-                    st.error("Failed to generate AI insights")
         
         # Add save options
         self.add_save_options("expertise_mapping", analysis)

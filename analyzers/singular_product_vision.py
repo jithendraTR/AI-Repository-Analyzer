@@ -1107,45 +1107,6 @@ class SingularProductVisionAnalyzer(BaseAnalyzer):
         else:
             st.info("No configuration files detected")
         
-        # AI-powered insights
-        st.subheader("🤖 AI Insights")
-        
-        if st.button("Generate Product Vision Insights"):
-            with self.display_loading_message("Generating AI insights..."):
-                # Prepare data for AI analysis
-                vision_summary = {
-                    "overall_score": analysis["vision_coherence_score"]["overall_score"],
-                    "features_identified": analysis["total_features_identified"],
-                    "documentation_coverage": analysis["documentation_coverage"],
-                    "api_consistency": analysis["vision_coherence_score"]["api_consistency_score"],
-                    "development_focus_ratio": dev_focus.get("feature_ratio", 0),
-                    "top_features": [f["name"] for f in sorted(
-                        feature_analysis.get("features", []), 
-                        key=lambda x: x["file_count"], reverse=True
-                    )[:5]]
-                }
-                
-                prompt = f"""
-                Analyze this product vision coherence data and provide strategic insights:
-                
-                {vision_summary}
-                
-                Please provide:
-                1. Assessment of product vision clarity and consistency
-                2. Strengths in current product direction
-                3. Areas where vision could be improved
-                4. Recommendations for better feature alignment
-                5. Strategic suggestions for maintaining product focus
-                6. Potential risks to product coherence
-                """
-                
-                insights = self.ai_client.query(prompt)
-                
-                if insights:
-                    st.markdown("**AI-Generated Strategic Insights:**")
-                    st.markdown(insights)
-                else:
-                    st.error("Failed to generate AI insights")
         
         # Add save options
         self.add_save_options("singular_product_vision", analysis)

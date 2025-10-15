@@ -1325,63 +1325,6 @@ class TimelineAnalyzer(BaseAnalyzer):
         else:
             st.info("No security evolution data found in the commit history")
         
-        # AI-powered insights
-        st.subheader("🤖 AI Timeline Insights")
-        
-        # Check if parallel AI insights are available
-        if not self.display_parallel_ai_insights("timeline_analysis"):
-            # Fallback to individual AI insight generation
-            if st.button("Generate Timeline Insights"):
-                with self.display_loading_message("Generating AI insights..."):
-                    # Prepare timeline summary for AI including enhanced data
-                    timeline_summary = {
-                        "project_age_years": analysis["project_age"]["age_years"] if analysis["project_age"] else 0,
-                        "total_commits": analysis["total_commits"],
-                        "recent_activity": recent_data["total_recent_commits"],
-                        "development_phases": len(phases),
-                        "release_count": release_data.get("total_releases", 0) if release_data else 0,
-                        "feature_patterns": feature_data.get("total_feature_commits", 0),
-                        "architecture_migrations": arch_data.get("total_migration_commits", 0),
-                        "performance_improvements": perf_data.get("total_performance_commits", 0),
-                        "security_enhancements": sec_data.get("total_security_commits", 0),
-                        "most_active_period": max(timeline_data["monthly_commits"].items(), key=lambda x: x[1])[0] if timeline_data["monthly_commits"] else "Unknown"
-                    }
-                    
-                    prompt = f"""
-                    Analyze this comprehensive project timeline data and provide insights:
-                    
-                    {timeline_summary}
-                    
-                    Enhanced Analysis Results:
-                    - Feature Commits: {feature_data.get('total_feature_commits', 0)}
-                    - Architecture Migrations: {arch_data.get('total_migration_commits', 0)}
-                    - Performance Improvements: {perf_data.get('total_performance_commits', 0)}
-                    - Security Enhancements: {sec_data.get('total_security_commits', 0)}
-                    
-                    Recent changes breakdown:
-                    - Features: {len(recent_data["feature_commits"])}
-                    - Bug fixes: {len(recent_data["bug_fixes"])}
-                    - Refactoring: {len(recent_data["refactoring"])}
-                    - Documentation: {len(recent_data["documentation"])}
-                    
-                    Please provide:
-                    1. Project evolution maturity assessment including feature development patterns
-                    2. Architecture migration strategy effectiveness and recommendations  
-                    3. Performance optimization impact and trends analysis
-                    4. Security posture evolution and improvement areas
-                    5. Development velocity trends and team collaboration insights
-                    6. Risk assessment for future development based on historical patterns
-                    """
-                    
-                    insights = self.ai_client.query(prompt)
-                    
-                    if insights:
-                        st.markdown("**AI-Generated Enhanced Timeline Insights:**")
-                        st.markdown(insights)
-                    else:
-                        st.error("Failed to generate AI insights")
-        else:
-            st.info("💡 Tip: Use 'Run AI Analysis for All Tabs' in the sidebar for faster parallel processing!")
         
         # Add save options
         self.add_save_options("timeline_analysis", analysis)

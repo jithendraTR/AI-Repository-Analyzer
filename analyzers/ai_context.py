@@ -989,52 +989,6 @@ class AIContextAnalyzer(BaseAnalyzer):
         else:
             st.info("No specific recommendations generated")
         
-        # AI-powered feature placement suggestions
-        st.subheader("🎯 AI Feature Placement Assistant")
-        
-        feature_description = st.text_area(
-            "Describe the new feature you want to add:",
-            placeholder="e.g., Add user authentication, Implement caching layer, Create API endpoint for orders"
-        )
-        
-        if st.button("Get AI Placement Suggestions") and feature_description:
-            with self.display_loading_message("Analyzing feature placement..."):
-                # Prepare context for AI
-                # Prepare context for AI with safe access
-                similar_impls = analysis.get("similar_implementations", [])
-                context_summary = {
-                    "architectural_patterns": pattern_scores,
-                    "extension_points": [ep.get("type", "Unknown") for ep in extension_points[:5] if isinstance(ep, dict)],
-                    "directory_structure": list(code_structure.get("directories", {}).keys())[:10],
-                    "similar_implementations": [
-                        impl.get("dominant_pattern", "Unknown") 
-                        for impl in (similar_impls[:5] if similar_impls and isinstance(similar_impls, list) else [])
-                        if impl and isinstance(impl, dict)
-                    ]
-                }
-                
-                prompt = f"""
-                Based on this codebase analysis:
-                
-                Architecture: {context_summary}
-                
-                Feature to implement: {feature_description}
-                
-                Please provide specific recommendations for:
-                1. Which directory/module to place the new feature
-                2. Which existing patterns or extension points to leverage
-                3. What files might need modification
-                4. Potential integration challenges
-                5. Best practices to follow based on the existing codebase
-                """
-                
-                suggestions = self.ai_client.query(prompt)
-                
-                if suggestions:
-                    st.markdown("**AI-Generated Placement Suggestions:**")
-                    st.markdown(suggestions)
-                else:
-                    st.error("Failed to generate placement suggestions")
         
         # Add save options
         self.add_save_options("ai_context", analysis)
