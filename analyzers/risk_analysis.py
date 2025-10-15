@@ -782,9 +782,6 @@ class RiskAnalysisAnalyzer(BaseAnalyzer):
     
     def render(self):
         """Render the risk analysis"""
-        st.header("⚠️ Risk Analysis & Test Coverage")
-        st.markdown("Identifying potential risks and test coverage gaps in your codebase")
-        
         # Add rerun button
         self.add_rerun_button("risk_analysis")
         

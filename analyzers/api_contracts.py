@@ -1347,9 +1347,6 @@ class APIContractAnalyzer(BaseAnalyzer):
     
     def render(self):
         """Render the API contracts analysis"""
-        st.header("🔌 API Contracts & Integration Points")
-        st.markdown("Discovering API contracts and integration patterns in your codebase")
-        
         # Add rerun button
         self.add_rerun_button("api_contracts")
         

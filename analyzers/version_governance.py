@@ -968,9 +968,6 @@ class VersionGovernanceAnalyzer(BaseAnalyzer):
     
     def render(self):
         """Render the version governance analysis"""
-        st.header("📦 Version Governance & Dependency Management")
-        st.markdown("Analyzing dependency management practices and version control")
-        
         # Add rerun button
         self.add_rerun_button("version_governance")
         

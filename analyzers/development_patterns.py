@@ -1176,9 +1176,6 @@ class DevelopmentPatternsAnalyzer(BaseAnalyzer):
     
     def render(self):
         """Render the development patterns analysis results in Streamlit"""
-        st.header("🔧 Development Patterns Analysis")
-        st.markdown("*Analyzing framework usage patterns and development practices in the codebase*")
-        
         # Get analysis results
         analysis = self.get_analysis_with_control("development_patterns", "Analyzing development patterns")
         

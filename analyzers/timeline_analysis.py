@@ -674,9 +674,6 @@ class TimelineAnalyzer(BaseAnalyzer):
     
     def render(self):
         """Render the timeline analysis"""
-        st.header("📅 Project Timeline Analysis")
-        st.markdown("Understanding project evolution and recent changes")
-        
         # Add rerun button
         self.add_rerun_button("timeline_analysis")
         

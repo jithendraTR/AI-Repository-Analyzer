@@ -102,6 +102,42 @@ class BaseAnalyzer(ABC):
         """Render the analysis results in Streamlit - must be implemented by subclasses"""
         pass
     
+    def render_with_header(self, analysis_type: str, title: str, description: str = None):
+        """
+        Render analysis with a single header - use this in subclass render methods
+        
+        Args:
+            analysis_type: Type of analysis for caching/controls
+            title: Display title for the analysis
+            description: Optional description text
+        """
+        # Display header only once
+        st.header(f"🔍 {title}")
+        if description:
+            st.markdown(description)
+        st.markdown("---")
+        
+        # Add rerun button
+        self.add_rerun_button(analysis_type)
+        
+        # Display any parallel AI insights first
+        insights_displayed = self.display_parallel_ai_insights(analysis_type)
+        if insights_displayed:
+            st.markdown("---")
+    
+    def render_analysis_section(self, analysis_type: str, loading_message: str):
+        """
+        Render analysis section without header - use this for the main analysis content
+        
+        Args:
+            analysis_type: Type of analysis
+            loading_message: Message to show while loading
+            
+        Returns:
+            Analysis results or None if analysis should not run
+        """
+        return self.get_analysis_with_control(analysis_type, loading_message)
+
     def get_file_list(self, extensions: List[str] = None) -> List[Path]:
         """
         Get list of files in the repository
@@ -442,21 +478,15 @@ class BaseAnalyzer(ABC):
     
     def add_rerun_button(self, analysis_type: str):
         """
-        Add a rerun button that clears cache and reruns analysis
+        Previously added a rerun button, now removed as per requirements
+        while maintaining functionality for cache clearing
         
         Args:
             analysis_type: Type of analysis to rerun
         """
-        col1, col2 = st.columns([3, 1])
-        with col2:
-            # Only show rerun button if analysis is not currently running
-            analysis_running = st.session_state.get('analysis_running', False)
-            if not analysis_running:
-                if st.button("🔄 Rerun Analysis", key=f"rerun_{analysis_type}"):
-                    # Only rerun if we're not in the middle of a selection change
-                    if not st.session_state.get('selection_changing', False):
-                        self.clear_cache(analysis_type)
-                        st.rerun()
+        # Button removed but maintaining the functionality for cache management
+        # This method is kept to maintain compatibility with existing code
+        pass
     
     def get_analysis_with_control(self, analysis_type: str, loading_message: str):
         """
@@ -530,7 +560,7 @@ class BaseAnalyzer(ABC):
             if result_key in results:
                 result = results[result_key]
                 
-                st.subheader("🤖 AI Insights (From Parallel Analysis)")
+                st.subheader("🤖 AI Insights")
                 
                 if result.get('success', False) and result.get('insight'):
                     st.markdown("**AI-Generated Insights:**")

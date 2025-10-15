@@ -857,9 +857,6 @@ class SingularProductVisionAnalyzer(BaseAnalyzer):
     
     def render(self):
         """Render the singular product vision analysis"""
-        st.header("🎯 Singular Product Vision Analysis")
-        st.markdown("Analyzing product vision consistency, feature alignment, and strategic coherence")
-        
         # Add rerun button
         self.add_rerun_button("singular_product_vision")
         

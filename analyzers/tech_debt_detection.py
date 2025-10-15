@@ -1017,9 +1017,6 @@ class TechDebtDetectionAnalyzer(BaseAnalyzer):
     
     def render(self):
         """Render the technical debt analysis"""
-        st.header("🔧 Technical Debt Detection")
-        st.markdown("Identifying code quality issues and technical debt patterns")
-        
         # Add rerun button
         self.add_rerun_button("tech_debt_detection")
         

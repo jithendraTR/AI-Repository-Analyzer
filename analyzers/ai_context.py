@@ -829,9 +829,6 @@ class AIContextAnalyzer(BaseAnalyzer):
     
     def render(self):
         """Render the AI context analysis"""
-        st.header("🤖 AI Context for New Features")
-        st.markdown("AI-powered insights on where and how to add new functionality")
-        
         # Add rerun button
         self.add_rerun_button("ai_context")
         

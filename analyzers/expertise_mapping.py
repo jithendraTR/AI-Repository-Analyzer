@@ -405,9 +405,6 @@ class ExpertiseMapper(BaseAnalyzer):
     
     def render(self):
         """Render the expertise mapping analysis"""
-        st.header("👥 Developer Expertise Mapping")
-        st.markdown("Understanding who has worked on what parts of the codebase")
-        
         # Add rerun button
         self.add_rerun_button("expertise_mapping")
         

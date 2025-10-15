@@ -944,9 +944,6 @@ class DesignPatternAnalyzer(BaseAnalyzer):
     
     def render(self):
         """Render the design pattern analysis"""
-        st.header("🏗️ Design Pattern Analysis")
-        st.markdown("Analyzing design pattern usage and deviations from best practices")
-        
         # Add rerun button
         self.add_rerun_button("design_patterns")
         
