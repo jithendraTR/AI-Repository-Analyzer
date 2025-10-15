@@ -1475,7 +1475,7 @@ class APIContractAnalyzer(BaseAnalyzer):
             st.info("No database schemas found")
         
         # External Integrations
-        st.subheader("🔗 External Integrations")
+        st.subheader("External Integrations")
         
         external_integrations = analysis["external_integrations"]
         if external_integrations:
@@ -1617,7 +1617,7 @@ class APIContractAnalyzer(BaseAnalyzer):
             
             # Coupling Analysis
             if "coupling_analysis" in complexity_data:
-                st.write("**🔗 Coupling Analysis**")
+                st.write("**Coupling Analysis**")
                 coupling = complexity_data["coupling_analysis"]
                 
                 if coupling["tight_coupling_indicators"]:

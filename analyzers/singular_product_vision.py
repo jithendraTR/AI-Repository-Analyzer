@@ -1049,7 +1049,7 @@ class SingularProductVisionAnalyzer(BaseAnalyzer):
             st.info("No commit history available for development focus analysis")
         
         # API consistency analysis
-        st.subheader("🔗 API Consistency Analysis")
+        st.subheader("API Consistency Analysis")
         
         api_analysis = analysis["api_consistency"]
         

@@ -375,7 +375,7 @@ def main():
         layout="wide"
     )
     
-    # Hide Streamlit's default deploy button and menu + Fix styling
+    # Hide Streamlit's default deploy button and menu + Fix styling + HIDE CHAIN LINK ICONS
     hide_streamlit_style = """
     <style>
     #MainMenu {visibility: hidden;}
@@ -391,6 +391,37 @@ def main():
     button[title="Deploy this app"] {display: none !important;}
     .css-1rs6os {display: none !important;}
     .css-17eq0hr {display: none !important;}
+    
+    /* HIDE ALL CHAIN LINK ICONS FROM HEADERS AND SUBHEADERS */
+    .stMarkdown h1 a, .stMarkdown h2 a, .stMarkdown h3 a, .stMarkdown h4 a, .stMarkdown h5 a, .stMarkdown h6 a {
+        display: none !important;
+        visibility: hidden !important;
+    }
+    [data-testid="stHeader"] a, [data-testid="stSubheader"] a {
+        display: none !important;
+        visibility: hidden !important;
+    }
+    .element-container h1 a, .element-container h2 a, .element-container h3 a {
+        display: none !important;
+        visibility: hidden !important;
+    }
+    h1 a[href^="#"], h2 a[href^="#"], h3 a[href^="#"], h4 a[href^="#"], h5 a[href^="#"], h6 a[href^="#"] {
+        display: none !important;
+        visibility: hidden !important;
+    }
+    /* Target any link icon specifically */
+    .stMarkdown a[href^="#"]:before, .stMarkdown a[href^="#"]:after {
+        display: none !important;
+    }
+    /* Hide anchor links completely */
+    a.anchor-link, .anchor-link {
+        display: none !important;
+        visibility: hidden !important;
+    }
+    /* Additional comprehensive targeting */
+    [data-testid="element-container"] a[href^="#"] {
+        display: none !important;
+    }
     
     /* Fix text input styling - remove red border and improve appearance */
     .stTextInput > div > div > input {
@@ -841,7 +872,7 @@ def main():
             analysis_options = {
                 'expertise': '👥 Team Expertise Mapping',
                 'timeline': '📅 Timeline Analysis',
-                'api_contracts': '🔗 API Contracts',
+                'api_contracts': 'API Contracts',
                 'ai_context': '🤖 AI Context Analysis',
                 'risk_analysis': '⚠️ Risk Analysis',
                 'development_patterns': '🔄 Development Patterns',
@@ -923,7 +954,7 @@ def main():
             analysis_options = {
                 'expertise': '👥 Team Expertise Mapping',
                 'timeline': '📅 Timeline Analysis',
-                'api_contracts': '🔗 API Contracts',
+                'api_contracts': 'API Contracts',
                 'ai_context': '🤖 AI Context Analysis',
                 'risk_analysis': '⚠️ Risk Analysis',
                 'development_patterns': '🔄 Development Patterns',

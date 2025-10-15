@@ -1413,7 +1413,7 @@ class DevelopmentPatternsAnalyzer(BaseAnalyzer):
             
             st.metric("Flow Complexity", flows.get('flow_complexity', 'Unknown'))
         
-        st.markdown("### 🔗 Integration Patterns")
+        st.markdown("### Integration Patterns")
         if 'integration_patterns' in behavioral_data:
             integration = behavioral_data['integration_patterns']
             
