@@ -42,7 +42,7 @@ class TimelineAnalyzer(BaseAnalyzer):
             return {"error": "Git repository required for timeline analysis"}
         
         try:
-            total_steps = 5  # Reduced steps for faster completion
+            total_steps = 9  # Increased steps for enhanced analysis
             current_step = 0
             
             # Step 1: Get minimal commit history for speed
@@ -90,7 +90,47 @@ class TimelineAnalyzer(BaseAnalyzer):
             development_phases = self._identify_development_phases_ultra_fast(commits, token)
             current_step += 1
             
-            # Step 5: Quick file evolution (skip if too many files)
+            # Step 5: Enhanced Feature Addition Patterns Analysis
+            if progress_callback:
+                progress_callback(current_step, total_steps, "Analyzing feature addition patterns...")
+            
+            if token:
+                token.check_cancellation()
+            
+            feature_patterns = self._analyze_feature_addition_patterns(commits, token)
+            current_step += 1
+            
+            # Step 6: Enhanced Architecture Migration History Analysis
+            if progress_callback:
+                progress_callback(current_step, total_steps, "Analyzing architecture migration history...")
+            
+            if token:
+                token.check_cancellation()
+            
+            architecture_migration = self._analyze_architecture_migration_history(commits, token)
+            current_step += 1
+            
+            # Step 7: Enhanced Performance Evolution Analysis
+            if progress_callback:
+                progress_callback(current_step, total_steps, "Analyzing performance evolution...")
+            
+            if token:
+                token.check_cancellation()
+            
+            performance_evolution = self._analyze_performance_evolution(commits, token)
+            current_step += 1
+            
+            # Step 8: Enhanced Security Evolution Analysis
+            if progress_callback:
+                progress_callback(current_step, total_steps, "Analyzing security evolution...")
+            
+            if token:
+                token.check_cancellation()
+            
+            security_evolution = self._analyze_security_evolution(commits, token)
+            current_step += 1
+            
+            # Step 9: Quick file evolution (skip if too many files)
             if progress_callback:
                 progress_callback(current_step, total_steps, "Finalizing analysis...")
             
@@ -112,7 +152,12 @@ class TimelineAnalyzer(BaseAnalyzer):
                 "file_evolution": file_evolution,
                 "release_patterns": release_patterns,
                 "project_age": self._calculate_project_age_fast(commits),
-                "total_commits": len(commits)
+                "total_commits": len(commits),
+                # Enhanced Analysis Results
+                "feature_patterns": feature_patterns,
+                "architecture_migration": architecture_migration,
+                "performance_evolution": performance_evolution,
+                "security_evolution": security_evolution
             }
             
             # Cache the result
@@ -969,6 +1014,320 @@ class TimelineAnalyzer(BaseAnalyzer):
         else:
             st.info("No release tags found in the repository")
         
+        # Enhanced Analysis Sections
+        st.header("🚀 Enhanced Historical Evolution Analysis")
+        st.markdown("Advanced insights into project evolution patterns and trends")
+        
+        # Feature Addition Patterns
+        st.subheader("📊 Feature Addition Patterns")
+        feature_data = analysis.get("feature_patterns", {})
+        
+        if feature_data and feature_data.get("total_feature_commits", 0) > 0:
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Total Feature Commits", feature_data["total_feature_commits"])
+            with col2:
+                most_common_type = max(feature_data["feature_categories"].items(), key=lambda x: x[1]) if feature_data["feature_categories"] else ("N/A", 0)
+                st.metric("Most Common Feature Type", most_common_type[0])
+            with col3:
+                st.metric("Integration Approaches", len(feature_data.get("integration_approaches", {})))
+            with col4:
+                developer_insights = feature_data.get("developer_insights", {})
+                st.metric("Avg Files per Feature", f"{developer_insights.get('avg_files_per_feature', 0):.1f}")
+            
+            # Feature categories distribution
+            if feature_data["feature_categories"]:
+                categories_df = pd.DataFrame([
+                    {"Category": category, "Count": count}
+                    for category, count in feature_data["feature_categories"].items()
+                ])
+                
+                fig_feature_categories = px.pie(
+                    categories_df,
+                    values='Count',
+                    names='Category',
+                    title="Feature Categories Distribution"
+                )
+                st.plotly_chart(fig_feature_categories, use_container_width=True)
+            
+            # Feature velocity over time
+            if feature_data.get("feature_velocity"):
+                velocity_df = pd.DataFrame([
+                    {"Quarter": quarter, "Features": count}
+                    for quarter, count in sorted(feature_data["feature_velocity"].items())
+                ])
+                
+                fig_feature_velocity = px.line(
+                    velocity_df,
+                    x='Quarter',
+                    y='Features',
+                    title="Feature Addition Velocity Over Time",
+                    markers=True
+                )
+                st.plotly_chart(fig_feature_velocity, use_container_width=True)
+            
+            # Best practices and insights
+            if feature_data.get("best_practices"):
+                st.write("**🎯 Identified Best Practices:**")
+                for practice in feature_data["best_practices"]:
+                    st.write(f"• {practice}")
+            
+            # Recent features highlights
+            if feature_data.get("recent_features"):
+                st.write("**🆕 Recent Feature Highlights:**")
+                for feature in feature_data["recent_features"][:5]:
+                    with st.expander(f"🔧 {feature['type'].title()} Feature - {feature['hash']} ({feature['date']})"):
+                        st.write(f"**Message:** {feature['message']}")
+                        st.write(f"**Author:** {feature['author']}")
+                        st.write(f"**Files Impacted:** {feature['files_impacted']}")
+        else:
+            st.info("No feature addition patterns found in the commit history")
+        
+        # Architecture Migration History
+        st.subheader("🏗️ Architecture Migration History")
+        arch_data = analysis.get("architecture_migration", {})
+        
+        if arch_data and arch_data.get("total_migration_commits", 0) > 0:
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Migration Commits", arch_data["total_migration_commits"])
+            with col2:
+                trends = arch_data.get("migration_trends", {})
+                st.metric("Migration Velocity", f"{trends.get('migration_velocity', 0):.1f}%")
+            with col3:
+                st.metric("Technology Adoptions", len(arch_data.get("technology_adoptions", {})))
+            with col4:
+                debt_indicators = arch_data.get("architectural_debt_indicators", {})
+                st.metric("Debt Risk Level", debt_indicators.get("risk_level", "Unknown"))
+            
+            # Architecture evolution timeline
+            if arch_data.get("architecture_evolution"):
+                evolution_data = []
+                for category, commits in arch_data["architecture_evolution"].items():
+                    for commit in commits:
+                        evolution_data.append({
+                            "Date": commit["date"],
+                            "Category": category.replace("_", " ").title(),
+                            "Message": commit["message"][:60] + "...",
+                            "Author": commit["author"],
+                            "Hash": commit["hash"]
+                        })
+                
+                if evolution_data:
+                    evolution_df = pd.DataFrame(evolution_data)
+                    
+                    fig_arch_timeline = px.scatter(
+                        evolution_df,
+                        x='Date',
+                        y='Category',
+                        color='Category',
+                        hover_data=['Message', 'Author', 'Hash'],
+                        title="Architecture Evolution Timeline"
+                    )
+                    fig_arch_timeline.update_xaxes(tickangle=45)
+                    st.plotly_chart(fig_arch_timeline, use_container_width=True)
+            
+            # Migration phases
+            if arch_data.get("migration_phases"):
+                st.write("**📅 Major Migration Phases:**")
+                for phase in arch_data["migration_phases"]:
+                    with st.expander(f"📆 {phase['period']} - {phase['dominant_type'].replace('_', ' ').title()} ({phase['commits_count']} commits)"):
+                        st.write(f"**Complexity Score:** {phase['complexity_avg']:.1f}/10")
+                        st.write("**Key Changes:**")
+                        for highlight in phase["highlights"]:
+                            st.write(f"• {highlight}")
+            
+            # Technology adoptions
+            if arch_data.get("technology_adoptions"):
+                tech_df = pd.DataFrame([
+                    {"Technology": tech, "Mentions": count}
+                    for tech, count in arch_data["technology_adoptions"].items()
+                ])
+                
+                fig_tech = px.bar(
+                    tech_df,
+                    x='Technology',
+                    y='Mentions',
+                    title="Technology Adoption Frequency"
+                )
+                st.plotly_chart(fig_tech, use_container_width=True)
+            
+            # Maturity indicators
+            maturity = arch_data.get("maturity_indicators", {})
+            if maturity:
+                st.write("**🎯 Architecture Maturity Indicators:**")
+                col1, col2, col3, col4, col5 = st.columns(5)
+                with col1:
+                    st.write("🔄 Microservices:", "✅" if maturity.get("microservices") else "❌")
+                with col2:
+                    st.write("📦 Containerization:", "✅" if maturity.get("containerization") else "❌")
+                with col3:
+                    st.write("☁️ Cloud Native:", "✅" if maturity.get("cloud_native") else "❌")
+                with col4:
+                    st.write("🚀 CI/CD:", "✅" if maturity.get("ci_cd") else "❌")
+                with col5:
+                    st.write("📊 Monitoring:", "✅" if maturity.get("monitoring") else "❌")
+        else:
+            st.info("No architecture migration history found in the commit history")
+        
+        # Performance Evolution
+        st.subheader("⚡ Performance Evolution")
+        perf_data = analysis.get("performance_evolution", {})
+        
+        if perf_data and perf_data.get("total_performance_commits", 0) > 0:
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Performance Commits", perf_data["total_performance_commits"])
+            with col2:
+                trends = perf_data.get("performance_trends", {})
+                st.metric("Improvement Velocity", f"{trends.get('improvement_velocity', 0):.1f}%")
+            with col3:
+                st.metric("Regressions", len(perf_data.get("performance_regressions", [])))
+            with col4:
+                developer_insights = perf_data.get("developer_insights", {})
+                st.metric("Avg Impact Score", f"{developer_insights.get('avg_impact_per_commit', 0):.1f}")
+            
+            # Performance optimization types
+            if perf_data.get("optimization_types"):
+                opt_df = pd.DataFrame([
+                    {"Type": opt_type.replace("_", " ").title(), "Count": count}
+                    for opt_type, count in perf_data["optimization_types"].items()
+                ])
+                
+                fig_perf_types = px.bar(
+                    opt_df,
+                    x='Type',
+                    y='Count',
+                    title="Performance Optimization Types"
+                )
+                fig_perf_types.update_xaxes(tickangle=45)
+                st.plotly_chart(fig_perf_types, use_container_width=True)
+            
+            # Quarterly performance improvements
+            if perf_data.get("quarterly_improvements"):
+                quarterly_data = []
+                for quarter, data in perf_data["quarterly_improvements"].items():
+                    quarterly_data.append({
+                        "Quarter": quarter,
+                        "Count": data["count"],
+                        "Avg Impact": data["avg_impact"]
+                    })
+                
+                if quarterly_data:
+                    quarterly_df = pd.DataFrame(quarterly_data)
+                    
+                    fig_quarterly_perf = px.line(
+                        quarterly_df,
+                        x='Quarter',
+                        y='Count',
+                        title="Quarterly Performance Improvements",
+                        markers=True
+                    )
+                    st.plotly_chart(fig_quarterly_perf, use_container_width=True)
+            
+            # Key optimizations
+            if perf_data.get("key_optimizations"):
+                st.write("**🚀 Key Performance Optimizations:**")
+                for optimization in perf_data["key_optimizations"][:5]:
+                    with st.expander(f"⚡ {optimization['type'].replace('_', ' ').title()} - {optimization['hash']} (Impact: {optimization['impact_estimate']}/10)"):
+                        st.write(f"**Date:** {optimization['date']}")
+                        st.write(f"**Author:** {optimization['author']}")
+                        st.write(f"**Message:** {optimization['message']}")
+            
+            # Performance champions
+            champions = perf_data.get("developer_insights", {}).get("performance_champions", [])
+            if champions:
+                st.write("**🏆 Performance Champions:**")
+                champions_df = pd.DataFrame([
+                    {"Developer": champ[0], "Contributions": champ[1]}
+                    for champ in champions[:5]
+                ])
+                
+                fig_champions = px.bar(
+                    champions_df,
+                    x='Developer',
+                    y='Contributions',
+                    title="Top Performance Contributors"
+                )
+                st.plotly_chart(fig_champions, use_container_width=True)
+        else:
+            st.info("No performance evolution data found in the commit history")
+        
+        # Security Evolution
+        st.subheader("🔒 Security Evolution")
+        sec_data = analysis.get("security_evolution", {})
+        
+        if sec_data and sec_data.get("total_security_commits", 0) > 0:
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Security Commits", sec_data["total_security_commits"])
+            with col2:
+                maturity = sec_data.get("security_maturity", {})
+                st.metric("Security Maturity", maturity.get("maturity_level", "Unknown"))
+            with col3:
+                st.metric("Vulnerability Responses", len(sec_data.get("vulnerability_responses", [])))
+            with col4:
+                trends = sec_data.get("security_trends", {})
+                avg_response_time = trends.get("vulnerability_response_avg", 0)
+                st.metric("Avg Response Time", f"{avg_response_time:.0f} days")
+            
+            # Security domains distribution
+            if sec_data.get("security_domains"):
+                domains_df = pd.DataFrame([
+                    {"Domain": domain.replace("_", " ").title(), "Count": count}
+                    for domain, count in sec_data["security_domains"].items()
+                ])
+                
+                fig_sec_domains = px.pie(
+                    domains_df,
+                    values='Count',
+                    names='Domain',
+                    title="Security Domains Focus"
+                )
+                st.plotly_chart(fig_sec_domains, use_container_width=True)
+            
+            # Security maturity assessment
+            maturity = sec_data.get("security_maturity", {})
+            if maturity.get("indicators"):
+                st.write("**🛡️ Security Maturity Assessment:**")
+                indicators = maturity["indicators"]
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.write("🔐 Modern Auth:", "✅" if indicators.get("modern_authentication") else "❌")
+                with col2:
+                    st.write("🔒 Encryption:", "✅" if indicators.get("encryption_practices") else "❌")
+                with col3:
+                    st.write("🛡️ Validation:", "✅" if indicators.get("input_validation") else "❌")
+                with col4:
+                    st.write("📋 Headers:", "✅" if indicators.get("security_headers") else "❌")
+            
+            # Framework adoptions timeline
+            if sec_data.get("framework_adoptions"):
+                st.write("**📚 Security Framework Adoptions:**")
+                for adoption in sec_data["framework_adoptions"][:5]:
+                    st.write(f"• **{adoption['framework'].upper()}** adopted on {adoption['date']} (Commit: {adoption['hash']})")
+            
+            # Security recommendations
+            if maturity.get("recommendations"):
+                st.write("**💡 Security Recommendations:**")
+                for recommendation in maturity["recommendations"]:
+                    st.write(f"• {recommendation}")
+            
+            # Recent security work
+            if sec_data.get("recent_security_work"):
+                st.write("**🔒 Recent Security Work:**")
+                for work in sec_data["recent_security_work"][:5]:
+                    with st.expander(f"🔐 {work['type'].replace('_', ' ').title()} - {work['hash']} (Severity: {work['severity']}/5)"):
+                        st.write(f"**Date:** {work['date']}")
+                        st.write(f"**Author:** {work['author']}")
+                        st.write(f"**Message:** {work['message']}")
+        else:
+            st.info("No security evolution data found in the commit history")
+        
         # AI-powered insights
         st.subheader("🤖 AI Timeline Insights")
         
@@ -977,20 +1336,30 @@ class TimelineAnalyzer(BaseAnalyzer):
             # Fallback to individual AI insight generation
             if st.button("Generate Timeline Insights"):
                 with self.display_loading_message("Generating AI insights..."):
-                    # Prepare timeline summary for AI
+                    # Prepare timeline summary for AI including enhanced data
                     timeline_summary = {
                         "project_age_years": analysis["project_age"]["age_years"] if analysis["project_age"] else 0,
                         "total_commits": analysis["total_commits"],
                         "recent_activity": recent_data["total_recent_commits"],
                         "development_phases": len(phases),
                         "release_count": release_data.get("total_releases", 0) if release_data else 0,
+                        "feature_patterns": feature_data.get("total_feature_commits", 0),
+                        "architecture_migrations": arch_data.get("total_migration_commits", 0),
+                        "performance_improvements": perf_data.get("total_performance_commits", 0),
+                        "security_enhancements": sec_data.get("total_security_commits", 0),
                         "most_active_period": max(timeline_data["monthly_commits"].items(), key=lambda x: x[1])[0] if timeline_data["monthly_commits"] else "Unknown"
                     }
                     
                     prompt = f"""
-                    Analyze this project timeline data and provide insights:
+                    Analyze this comprehensive project timeline data and provide insights:
                     
                     {timeline_summary}
+                    
+                    Enhanced Analysis Results:
+                    - Feature Commits: {feature_data.get('total_feature_commits', 0)}
+                    - Architecture Migrations: {arch_data.get('total_migration_commits', 0)}
+                    - Performance Improvements: {perf_data.get('total_performance_commits', 0)}
+                    - Security Enhancements: {sec_data.get('total_security_commits', 0)}
                     
                     Recent changes breakdown:
                     - Features: {len(recent_data["feature_commits"])}
@@ -999,17 +1368,18 @@ class TimelineAnalyzer(BaseAnalyzer):
                     - Documentation: {len(recent_data["documentation"])}
                     
                     Please provide:
-                    1. Project maturity assessment
-                    2. Development velocity trends
-                    3. Team activity patterns
-                    4. Release cadence analysis
-                    5. Recommendations for project timeline management
+                    1. Project evolution maturity assessment including feature development patterns
+                    2. Architecture migration strategy effectiveness and recommendations  
+                    3. Performance optimization impact and trends analysis
+                    4. Security posture evolution and improvement areas
+                    5. Development velocity trends and team collaboration insights
+                    6. Risk assessment for future development based on historical patterns
                     """
                     
                     insights = self.ai_client.query(prompt)
                     
                     if insights:
-                        st.markdown("**AI-Generated Timeline Insights:**")
+                        st.markdown("**AI-Generated Enhanced Timeline Insights:**")
                         st.markdown(insights)
                     else:
                         st.error("Failed to generate AI insights")
@@ -1310,3 +1680,585 @@ class TimelineAnalyzer(BaseAnalyzer):
             'age_months': age_days / 30.44,
             'age_years': age_days / 365.25
         }
+    
+    def _analyze_feature_addition_patterns(self, commits: List[Dict], token=None) -> Dict[str, Any]:
+        """Analyze how new features and capabilities have been integrated over time"""
+        
+        # Feature identification patterns
+        feature_patterns = {
+            'api_features': re.compile(r'(api|endpoint|route|service)', re.IGNORECASE),
+            'ui_features': re.compile(r'(ui|component|page|form|button|modal)', re.IGNORECASE),
+            'database_features': re.compile(r'(database|table|schema|migration|model)', re.IGNORECASE),
+            'auth_features': re.compile(r'(auth|login|signup|permission|role)', re.IGNORECASE),
+            'integration_features': re.compile(r'(integration|external|third.party|webhook)', re.IGNORECASE),
+            'performance_features': re.compile(r'(cache|optimize|performance|speed)', re.IGNORECASE)
+        }
+        
+        feature_commits = []
+        feature_categories = Counter()
+        feature_timeline = defaultdict(list)
+        integration_approaches = Counter()
+        
+        for commit in commits:
+            if token:
+                token.check_cancellation()
+            
+            message = commit['message'].lower()
+            
+            # Check if it's a feature commit
+            if self._COMMIT_PATTERNS['feature'].search(commit['message']):
+                # Categorize the feature
+                feature_type = 'general'
+                for category, pattern in feature_patterns.items():
+                    if pattern.search(message):
+                        feature_type = category
+                        break
+                
+                feature_categories[feature_type] += 1
+                
+                # Track integration approaches
+                if any(keyword in message for keyword in ['module', 'class', 'function']):
+                    integration_approaches['modular'] += 1
+                elif any(keyword in message for keyword in ['config', 'setting', 'parameter']):
+                    integration_approaches['configurable'] += 1
+                elif any(keyword in message for keyword in ['extend', 'inherit', 'override']):
+                    integration_approaches['extensible'] += 1
+                else:
+                    integration_approaches['direct'] += 1
+                
+                # Timeline tracking
+                quarter = f"{commit['date'].year}-Q{(commit['date'].month-1)//3 + 1}"
+                feature_timeline[quarter].append({
+                    'type': feature_type,
+                    'message': commit['message'][:100],
+                    'hash': commit['hash'][:8],
+                    'date': commit['date'].strftime('%Y-%m-%d'),
+                    'author': commit['author']
+                })
+                
+                feature_commits.append({
+                    'hash': commit['hash'][:8],
+                    'message': commit['message'],
+                    'author': commit['author'],
+                    'date': commit['date'].strftime('%Y-%m-%d'),
+                    'type': feature_type,
+                    'files_impacted': len(commit.get('files', [])) if commit.get('files') else 0
+                })
+        
+        # Identify best practices and patterns
+        best_practices = []
+        if integration_approaches['modular'] > len(feature_commits) * 0.3:
+            best_practices.append("Strong modular design approach in feature development")
+        if integration_approaches['configurable'] > len(feature_commits) * 0.2:
+            best_practices.append("Configuration-driven feature implementation")
+        if len(set(fc['author'] for fc in feature_commits)) > len(feature_commits) * 0.5:
+            best_practices.append("Collaborative feature development across team")
+        
+        # Calculate feature velocity
+        feature_velocity = {}
+        for quarter, features in feature_timeline.items():
+            feature_velocity[quarter] = len(features)
+        
+        return {
+            'total_feature_commits': len(feature_commits),
+            'feature_categories': dict(feature_categories),
+            'feature_timeline': dict(feature_timeline),
+            'integration_approaches': dict(integration_approaches),
+            'best_practices': best_practices,
+            'feature_velocity': feature_velocity,
+            'recent_features': feature_commits[:10],  # Last 10 features
+            'feature_complexity_trend': self._analyze_feature_complexity(feature_commits),
+            'developer_insights': {
+                'most_prolific_feature_developer': max(Counter(fc['author'] for fc in feature_commits).items(), key=lambda x: x[1])[0] if feature_commits else None,
+                'avg_files_per_feature': sum(fc['files_impacted'] for fc in feature_commits) / len(feature_commits) if feature_commits else 0
+            }
+        }
+    
+    def _analyze_architecture_migration_history(self, commits: List[Dict], token=None) -> Dict[str, Any]:
+        """Analyze major architectural changes, migrations, and system evolution decisions"""
+        
+        # Architecture change patterns
+        architecture_patterns = {
+            'framework_migration': re.compile(r'(migrate|upgrade|framework|library|version)', re.IGNORECASE),
+            'database_migration': re.compile(r'(database|db|migration|schema|table)', re.IGNORECASE),
+            'infrastructure_changes': re.compile(r'(deploy|docker|container|cloud|server|infrastructure)', re.IGNORECASE),
+            'api_evolution': re.compile(r'(api|rest|graphql|endpoint|service)', re.IGNORECASE),
+            'security_hardening': re.compile(r'(security|auth|ssl|tls|encrypt|secure)', re.IGNORECASE),
+            'performance_optimization': re.compile(r'(optimize|performance|cache|speed|memory)', re.IGNORECASE)
+        }
+        
+        migration_commits = []
+        architecture_evolution = defaultdict(list)
+        technology_adoptions = Counter()
+        migration_phases = []
+        
+        sorted_commits = sorted(commits, key=lambda x: x['date'])
+        
+        for commit in sorted_commits:
+            if token:
+                token.check_cancellation()
+            
+            message = commit['message'].lower()
+            
+            # Check for architectural changes
+            for category, pattern in architecture_patterns.items():
+                if pattern.search(commit['message']):
+                    period = f"{commit['date'].year}-{commit['date'].month:02d}"
+                    
+                    # Track technology adoptions
+                    tech_keywords = ['react', 'angular', 'vue', 'docker', 'kubernetes', 'aws', 'azure', 'gcp', 'mongodb', 'postgresql', 'redis']
+                    for tech in tech_keywords:
+                        if tech in message:
+                            technology_adoptions[tech] += 1
+                    
+                    architecture_evolution[category].append({
+                        'hash': commit['hash'][:8],
+                        'message': commit['message'],
+                        'date': commit['date'].strftime('%Y-%m-%d'),
+                        'author': commit['author'],
+                        'period': period,
+                        'files_impacted': len(commit.get('files', [])) if commit.get('files') else 0
+                    })
+                    
+                    migration_commits.append({
+                        'hash': commit['hash'][:8],
+                        'message': commit['message'],
+                        'date': commit['date'].strftime('%Y-%m-%d'),
+                        'author': commit['author'],
+                        'category': category,
+                        'complexity_score': self._calculate_migration_complexity(commit['message'])
+                    })
+                    break
+        
+        # Identify major migration phases
+        if migration_commits:
+            # Group migrations by time periods
+            period_groups = defaultdict(list)
+            for commit in migration_commits:
+                year_month = commit['date'][:7]  # YYYY-MM
+                period_groups[year_month].append(commit)
+            
+            # Identify major phases (periods with multiple migrations)
+            for period, commits_in_period in period_groups.items():
+                if len(commits_in_period) >= 3:
+                    dominant_category = Counter(c['category'] for c in commits_in_period).most_common(1)[0]
+                    migration_phases.append({
+                        'period': period,
+                        'commits_count': len(commits_in_period),
+                        'dominant_type': dominant_category[0],
+                        'complexity_avg': sum(c['complexity_score'] for c in commits_in_period) / len(commits_in_period),
+                        'highlights': [c['message'][:80] + '...' for c in commits_in_period[:3]]
+                    })
+        
+        # Architecture maturity assessment
+        maturity_indicators = {
+            'microservices': any('microservice' in c['message'].lower() for c in migration_commits),
+            'containerization': any(keyword in c['message'].lower() for c in migration_commits for keyword in ['docker', 'container']),
+            'cloud_native': any(keyword in c['message'].lower() for c in migration_commits for keyword in ['cloud', 'aws', 'azure', 'gcp']),
+            'ci_cd': any(keyword in c['message'].lower() for c in migration_commits for keyword in ['ci', 'cd', 'pipeline', 'deploy']),
+            'monitoring': any(keyword in c['message'].lower() for c in migration_commits for keyword in ['monitor', 'log', 'metric', 'alert'])
+        }
+        
+        return {
+            'total_migration_commits': len(migration_commits),
+            'architecture_evolution': dict(architecture_evolution),
+            'technology_adoptions': dict(technology_adoptions),
+            'migration_phases': migration_phases,
+            'maturity_indicators': maturity_indicators,
+            'recent_migrations': migration_commits[:10],
+            'migration_trends': {
+                'most_active_migration_type': max(architecture_evolution.keys(), key=lambda k: len(architecture_evolution[k])) if architecture_evolution else None,
+                'migration_velocity': len(migration_commits) / max(1, len(commits)) * 100,  # Percentage
+                'complexity_trend': [c['complexity_score'] for c in migration_commits[-10:]]
+            },
+            'architectural_debt_indicators': self._identify_architectural_debt(migration_commits)
+        }
+    
+    def _analyze_performance_evolution(self, commits: List[Dict], token=None) -> Dict[str, Any]:
+        """Track how system performance metrics have changed across releases and refactors"""
+        
+        # Performance-related patterns
+        performance_patterns = {
+            'optimization': re.compile(r'(optimize|performance|speed|fast|efficient)', re.IGNORECASE),
+            'caching': re.compile(r'(cache|redis|memcache|cdn)', re.IGNORECASE),
+            'database_perf': re.compile(r'(index|query|database|db.*perf|slow.*query)', re.IGNORECASE),
+            'memory_management': re.compile(r'(memory|leak|garbage|allocation)', re.IGNORECASE),
+            'concurrency': re.compile(r'(async|concurrent|parallel|thread|worker)', re.IGNORECASE),
+            'network_perf': re.compile(r'(network|bandwidth|compression|gzip)', re.IGNORECASE)
+        }
+        
+        performance_commits = []
+        performance_timeline = defaultdict(list)
+        optimization_types = Counter()
+        performance_regressions = []
+        
+        for commit in commits:
+            if token:
+                token.check_cancellation()
+            
+            message = commit['message'].lower()
+            
+            # Check for performance-related commits
+            perf_type = None
+            for category, pattern in performance_patterns.items():
+                if pattern.search(commit['message']):
+                    perf_type = category
+                    optimization_types[category] += 1
+                    break
+            
+            # Also check for regression fixes
+            if any(keyword in message for keyword in ['slow', 'timeout', 'bottleneck', 'regression']):
+                if any(keyword in message for keyword in ['fix', 'resolve', 'improve']):
+                    perf_type = 'regression_fix'
+                    optimization_types['regression_fix'] += 1
+                    performance_regressions.append({
+                        'hash': commit['hash'][:8],
+                        'message': commit['message'],
+                        'date': commit['date'].strftime('%Y-%m-%d'),
+                        'author': commit['author']
+                    })
+            
+            if perf_type:
+                quarter = f"{commit['date'].year}-Q{(commit['date'].month-1)//3 + 1}"
+                performance_timeline[quarter].append({
+                    'type': perf_type,
+                    'message': commit['message'][:100],
+                    'hash': commit['hash'][:8],
+                    'date': commit['date'].strftime('%Y-%m-%d'),
+                    'author': commit['author'],
+                    'impact_estimate': self._estimate_performance_impact(commit['message'])
+                })
+                
+                performance_commits.append({
+                    'hash': commit['hash'][:8],
+                    'message': commit['message'],
+                    'date': commit['date'].strftime('%Y-%m-%d'),
+                    'author': commit['author'],
+                    'type': perf_type,
+                    'impact_estimate': self._estimate_performance_impact(commit['message'])
+                })
+        
+        # Calculate performance improvement trends
+        quarterly_improvements = {}
+        for quarter, improvements in performance_timeline.items():
+            quarterly_improvements[quarter] = {
+                'count': len(improvements),
+                'avg_impact': sum(imp['impact_estimate'] for imp in improvements) / len(improvements) if improvements else 0,
+                'types': Counter(imp['type'] for imp in improvements)
+            }
+        
+        # Identify key optimizations
+        key_optimizations = sorted(performance_commits, key=lambda x: x['impact_estimate'], reverse=True)[:10]
+        
+        return {
+            'total_performance_commits': len(performance_commits),
+            'optimization_types': dict(optimization_types),
+            'performance_timeline': dict(performance_timeline),
+            'quarterly_improvements': quarterly_improvements,
+            'performance_regressions': performance_regressions,
+            'key_optimizations': key_optimizations,
+            'performance_trends': {
+                'improvement_velocity': len(performance_commits) / max(1, len(commits)) * 100,
+                'regression_rate': len(performance_regressions) / max(1, len(performance_commits)) * 100 if performance_commits else 0,
+                'most_common_optimization': optimization_types.most_common(1)[0] if optimization_types else None
+            },
+            'architecture_correlation': self._correlate_performance_with_architecture(performance_commits),
+            'developer_insights': {
+                'performance_champions': Counter(pc['author'] for pc in performance_commits).most_common(5),
+                'avg_impact_per_commit': sum(pc['impact_estimate'] for pc in performance_commits) / len(performance_commits) if performance_commits else 0
+            }
+        }
+    
+    def _analyze_security_evolution(self, commits: List[Dict], token=None) -> Dict[str, Any]:
+        """Map the development and improvement of security patterns and practices"""
+        
+        # Security-related patterns
+        security_patterns = {
+            'authentication': re.compile(r'(auth|login|signup|oauth|jwt|session)', re.IGNORECASE),
+            'authorization': re.compile(r'(permission|role|access|authorize|rbac)', re.IGNORECASE),
+            'cryptography': re.compile(r'(encrypt|decrypt|hash|crypto|ssl|tls)', re.IGNORECASE),
+            'validation': re.compile(r'(validate|sanitize|escape|xss|sql.*injection)', re.IGNORECASE),
+            'vulnerability_fixes': re.compile(r'(vulnerability|security.*fix|cve|exploit)', re.IGNORECASE),
+            'security_headers': re.compile(r'(header|cors|csp|security.*policy)', re.IGNORECASE)
+        }
+        
+        security_commits = []
+        security_timeline = defaultdict(list)
+        security_domains = Counter()
+        vulnerability_responses = []
+        framework_adoptions = []
+        
+        for commit in commits:
+            if token:
+                token.check_cancellation()
+            
+            message = commit['message'].lower()
+            
+            # Check for security-related commits
+            sec_type = None
+            for category, pattern in security_patterns.items():
+                if pattern.search(commit['message']):
+                    sec_type = category
+                    security_domains[category] += 1
+                    break
+            
+            # Check for framework adoptions
+            security_frameworks = ['oauth2', 'jwt', 'passport', 'spring.security', 'helmet', 'csrf']
+            for framework in security_frameworks:
+                if framework.replace('.', ' ') in message or framework in message:
+                    framework_adoptions.append({
+                        'framework': framework,
+                        'hash': commit['hash'][:8],
+                        'date': commit['date'].strftime('%Y-%m-%d'),
+                        'message': commit['message']
+                    })
+            
+            # Check for vulnerability responses
+            if sec_type == 'vulnerability_fixes' or any(keyword in message for keyword in ['security fix', 'vulnerability', 'cve']):
+                response_time = self._estimate_vulnerability_response_time(commit)
+                vulnerability_responses.append({
+                    'hash': commit['hash'][:8],
+                    'message': commit['message'],
+                    'date': commit['date'].strftime('%Y-%m-%d'),
+                    'author': commit['author'],
+                    'estimated_response_time': response_time,
+                    'severity_estimate': self._estimate_vulnerability_severity(commit['message'])
+                })
+            
+            if sec_type:
+                quarter = f"{commit['date'].year}-Q{(commit['date'].month-1)//3 + 1}"
+                security_timeline[quarter].append({
+                    'type': sec_type,
+                    'message': commit['message'][:100],
+                    'hash': commit['hash'][:8],
+                    'date': commit['date'].strftime('%Y-%m-%d'),
+                    'author': commit['author'],
+                    'severity': self._estimate_vulnerability_severity(commit['message'])
+                })
+                
+                security_commits.append({
+                    'hash': commit['hash'][:8],
+                    'message': commit['message'],
+                    'date': commit['date'].strftime('%Y-%m-%d'),
+                    'author': commit['author'],
+                    'type': sec_type,
+                    'severity': self._estimate_vulnerability_severity(commit['message'])
+                })
+        
+        # Security maturity progression
+        security_maturity = self._assess_security_maturity(security_commits, framework_adoptions)
+        
+        # Calculate security improvement trends
+        quarterly_security = {}
+        for quarter, improvements in security_timeline.items():
+            quarterly_security[quarter] = {
+                'count': len(improvements),
+                'types': Counter(imp['type'] for imp in improvements),
+                'avg_severity': sum(imp['severity'] for imp in improvements) / len(improvements) if improvements else 0
+            }
+        
+        return {
+            'total_security_commits': len(security_commits),
+            'security_domains': dict(security_domains),
+            'security_timeline': dict(security_timeline),
+            'quarterly_security': quarterly_security,
+            'vulnerability_responses': vulnerability_responses,
+            'framework_adoptions': framework_adoptions,
+            'security_maturity': security_maturity,
+            'recent_security_work': security_commits[:10],
+            'security_trends': {
+                'improvement_velocity': len(security_commits) / max(1, len(commits)) * 100,
+                'vulnerability_response_avg': sum(vr['estimated_response_time'] for vr in vulnerability_responses) / len(vulnerability_responses) if vulnerability_responses else 0,
+                'most_active_security_domain': security_domains.most_common(1)[0] if security_domains else None
+            },
+            'developer_insights': {
+                'security_champions': Counter(sc['author'] for sc in security_commits).most_common(5),
+                'framework_adoption_timeline': sorted(framework_adoptions, key=lambda x: x['date'])
+            }
+        }
+    
+    # Helper methods for enhanced analysis
+    def _analyze_feature_complexity(self, feature_commits: List[Dict]) -> List[Dict]:
+        """Analyze feature complexity trends over time"""
+        complexity_data = []
+        
+        for commit in feature_commits[-20:]:  # Last 20 features
+            # Simple complexity estimation based on commit message length and keywords
+            complexity_score = 1
+            message = commit['message'].lower()
+            
+            # Complexity indicators
+            if any(keyword in message for keyword in ['refactor', 'migrate', 'rewrite']):
+                complexity_score += 3
+            if any(keyword in message for keyword in ['integration', 'api', 'database']):
+                complexity_score += 2
+            if any(keyword in message for keyword in ['config', 'setting', 'parameter']):
+                complexity_score += 1
+            
+            # Length-based complexity
+            if len(commit['message']) > 100:
+                complexity_score += 2
+            elif len(commit['message']) > 50:
+                complexity_score += 1
+            
+            complexity_data.append({
+                'date': commit['date'],
+                'complexity': min(complexity_score, 10),  # Cap at 10
+                'type': commit['type']
+            })
+        
+        return complexity_data
+    
+    def _calculate_migration_complexity(self, message: str) -> int:
+        """Calculate migration complexity score based on commit message"""
+        complexity = 1
+        message_lower = message.lower()
+        
+        # High complexity indicators
+        if any(keyword in message_lower for keyword in ['breaking', 'major', 'rewrite']):
+            complexity += 5
+        if any(keyword in message_lower for keyword in ['database', 'schema', 'migration']):
+            complexity += 3
+        if any(keyword in message_lower for keyword in ['framework', 'library', 'dependency']):
+            complexity += 2
+        if any(keyword in message_lower for keyword in ['config', 'environment', 'deployment']):
+            complexity += 1
+        
+        return min(complexity, 10)
+    
+    def _identify_architectural_debt(self, migration_commits: List[Dict]) -> Dict[str, Any]:
+        """Identify indicators of architectural debt"""
+        debt_indicators = {
+            'frequent_migrations': len([c for c in migration_commits if 'migration' in c['message'].lower()]) > len(migration_commits) * 0.3,
+            'emergency_fixes': len([c for c in migration_commits if any(keyword in c['message'].lower() for keyword in ['hotfix', 'urgent', 'critical'])]) > 0,
+            'inconsistent_patterns': len(set(c['category'] for c in migration_commits[-10:])) > 3,  # Too many different types recently
+            'high_complexity_trend': sum(c['complexity_score'] for c in migration_commits[-5:]) / 5 > 5 if len(migration_commits) >= 5 else False
+        }
+        
+        debt_score = sum(1 for indicator in debt_indicators.values() if indicator)
+        
+        return {
+            'debt_indicators': debt_indicators,
+            'debt_score': debt_score,
+            'risk_level': 'High' if debt_score >= 3 else 'Medium' if debt_score >= 2 else 'Low'
+        }
+    
+    def _estimate_performance_impact(self, message: str) -> int:
+        """Estimate performance impact based on commit message"""
+        impact = 1
+        message_lower = message.lower()
+        
+        # High impact indicators
+        if any(keyword in message_lower for keyword in ['optimization', 'performance', 'speed']):
+            impact += 3
+        if any(keyword in message_lower for keyword in ['cache', 'index', 'query']):
+            impact += 2
+        if any(keyword in message_lower for keyword in ['memory', 'cpu', 'resource']):
+            impact += 2
+        if any(keyword in message_lower for keyword in ['async', 'parallel', 'concurrent']):
+            impact += 1
+        
+        return min(impact, 10)
+    
+    def _correlate_performance_with_architecture(self, performance_commits: List[Dict]) -> Dict[str, Any]:
+        """Correlate performance changes with architectural changes"""
+        architecture_keywords = ['migrate', 'framework', 'refactor', 'restructure']
+        performance_architecture_correlation = []
+        
+        for commit in performance_commits:
+            message_lower = commit['message'].lower()
+            has_architecture_keywords = any(keyword in message_lower for keyword in architecture_keywords)
+            
+            if has_architecture_keywords:
+                performance_architecture_correlation.append({
+                    'hash': commit['hash'],
+                    'date': commit['date'],
+                    'message': commit['message'],
+                    'type': commit['type'],
+                    'impact': commit['impact_estimate']
+                })
+        
+        return {
+            'correlated_commits': performance_architecture_correlation,
+            'correlation_strength': len(performance_architecture_correlation) / len(performance_commits) if performance_commits else 0
+        }
+    
+    def _estimate_vulnerability_response_time(self, commit: Dict) -> int:
+        """Estimate vulnerability response time (simplified heuristic)"""
+        message_lower = commit['message'].lower()
+        
+        # Urgency indicators suggest faster response
+        if any(keyword in message_lower for keyword in ['critical', 'urgent', 'hotfix']):
+            return 1  # 1 day
+        elif any(keyword in message_lower for keyword in ['high', 'important', 'security']):
+            return 3  # 3 days
+        else:
+            return 7  # 1 week
+    
+    def _estimate_vulnerability_severity(self, message: str) -> int:
+        """Estimate vulnerability severity based on commit message"""
+        severity = 1
+        message_lower = message.lower()
+        
+        # Severity indicators
+        if any(keyword in message_lower for keyword in ['critical', 'severe']):
+            severity = 5
+        elif any(keyword in message_lower for keyword in ['high', 'important']):
+            severity = 4
+        elif any(keyword in message_lower for keyword in ['medium', 'moderate']):
+            severity = 3
+        elif any(keyword in message_lower for keyword in ['low', 'minor']):
+            severity = 2
+        elif any(keyword in message_lower for keyword in ['injection', 'xss', 'csrf', 'cve']):
+            severity = 5
+        
+        return severity
+    
+    def _assess_security_maturity(self, security_commits: List[Dict], framework_adoptions: List[Dict]) -> Dict[str, Any]:
+        """Assess overall security maturity"""
+        
+        # Security maturity indicators
+        has_modern_auth = any(framework in str(framework_adoptions) for framework in ['oauth2', 'jwt'])
+        has_encryption = any('encrypt' in commit['message'].lower() for commit in security_commits)
+        has_validation = any(commit['type'] == 'validation' for commit in security_commits)
+        has_security_headers = any(commit['type'] == 'security_headers' for commit in security_commits)
+        
+        maturity_score = sum([has_modern_auth, has_encryption, has_validation, has_security_headers])
+        
+        maturity_levels = {
+            0: 'Basic',
+            1: 'Developing', 
+            2: 'Intermediate',
+            3: 'Advanced',
+            4: 'Mature'
+        }
+        
+        return {
+            'maturity_level': maturity_levels[maturity_score],
+            'maturity_score': maturity_score,
+            'indicators': {
+                'modern_authentication': has_modern_auth,
+                'encryption_practices': has_encryption,
+                'input_validation': has_validation,
+                'security_headers': has_security_headers
+            },
+            'recommendations': self._get_security_recommendations(maturity_score)
+        }
+    
+    def _get_security_recommendations(self, maturity_score: int) -> List[str]:
+        """Get security recommendations based on maturity score"""
+        recommendations = []
+        
+        if maturity_score < 4:
+            recommendations.append("Implement comprehensive security headers (CSP, HSTS, etc.)")
+        if maturity_score < 3:
+            recommendations.append("Enhance input validation and sanitization practices")
+        if maturity_score < 2:
+            recommendations.append("Implement modern authentication mechanisms (OAuth2, JWT)")
+        if maturity_score < 1:
+            recommendations.append("Establish basic encryption for sensitive data")
+        
+        if maturity_score >= 4:
+            recommendations.append("Maintain current security practices and stay updated with latest threats")
+        
+        return recommendations
