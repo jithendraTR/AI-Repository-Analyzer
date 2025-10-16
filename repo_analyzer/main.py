@@ -409,6 +409,11 @@ def main():
     if 'show_dev_assistance_popup' not in st.session_state:
         st.session_state.show_dev_assistance_popup = False
     
+    # CRITICAL: If analysis is running, force disable ALL popups to prevent dialog conflicts
+    if st.session_state.get('analysis_running', False):
+        st.session_state.show_summary_popup = False
+        st.session_state.show_dev_assistance_popup = False
+    
     # Hide Streamlit's default deploy button and menu + Fix styling + HIDE CHAIN LINK ICONS
     hide_streamlit_style = """
     <style>
@@ -748,8 +753,10 @@ def main():
                 else:
                     st.error("Please load a repository first!")
 
-    # Handle dialogs - ensure only one dialog is displayed at a time
-    if st.session_state.get('show_summary_popup', False) and not st.session_state.get('show_dev_assistance_popup', False):
+    # Handle dialogs - ensure only one dialog is displayed at a time AND analysis is not running
+    if (st.session_state.get('show_summary_popup', False) and 
+        not st.session_state.get('show_dev_assistance_popup', False) and 
+        not st.session_state.get('analysis_running', False)):
         @st.dialog("📋 Comprehensive Project Summary")
         def show_summary_dialog():
             actual_repo_path = st.session_state.get('actual_repo_path', '')
@@ -797,7 +804,9 @@ def main():
         show_summary_dialog()
 
     # Handle dev assistance popup display using st.dialog as context manager
-    elif st.session_state.get('show_dev_assistance_popup', False) and not st.session_state.get('show_summary_popup', False):
+    elif (st.session_state.get('show_dev_assistance_popup', False) and 
+          not st.session_state.get('show_summary_popup', False) and 
+          not st.session_state.get('analysis_running', False)):
         @st.dialog("🤖 Development Setup Assistant")
         def show_dev_assistance_dialog():
             actual_repo_path = st.session_state.get('actual_repo_path', '')
@@ -1196,10 +1205,13 @@ def main():
                     elif not any(selected_analyses.values()):
                         st.error("Please select at least one analysis to run!")
                     else:
-                        # Start the analysis
+                        # Start the analysis - with comprehensive dialog blocking
                         st.session_state.analysis_running = True
                         st.session_state.analysis_complete = False
                         st.session_state.results = {}
+                        # FINAL DIALOG CLEARING before rerun
+                        st.session_state.show_summary_popup = False
+                        st.session_state.show_dev_assistance_popup = False
                         # Store selected analyses for the execution phase
                         st.session_state.selected_analyses = selected_analyses
                         st.rerun()
@@ -1240,7 +1252,7 @@ def main():
     
     # Handle analysis execution
     if st.session_state.analysis_running and not st.session_state.analysis_complete:
-        # Force disable all popups during analysis to prevent any interference
+        # AGGRESSIVELY force disable all popups during analysis to prevent any interference
         st.session_state.show_summary_popup = False
         st.session_state.show_dev_assistance_popup = False
         
@@ -1333,6 +1345,10 @@ def main():
     
     # Main content area
     elif not st.session_state.analysis_complete:
+        # AGGRESSIVE DIALOG CLEARING - ensure no dialogs show on main content area
+        st.session_state.show_summary_popup = False
+        st.session_state.show_dev_assistance_popup = False
+        
         st.markdown("## 🚀 Welcome to AI Repository Analysis")
         
         st.markdown("""
