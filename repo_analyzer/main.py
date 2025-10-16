@@ -794,6 +794,28 @@ def main():
                 key="repo_path_input"
             )
             
+            # Add commit time frame selection
+            st.subheader("⏱️ Commit Time Frame")
+            time_frame_options = {
+                "all": "All commits",
+                "1_year": "Last 1 year",
+                "2_years": "Last 2 years", 
+                "3_years": "Last 3 years",
+                "5_years": "Last 5 years"
+            }
+            
+            selected_time_frame = st.selectbox(
+                "Select analysis time period",
+                options=list(time_frame_options.keys()),
+                format_func=lambda x: time_frame_options[x],
+                index=0,  # Default to "all"
+                help="Choose how far back in commit history to analyze",
+                key="time_frame_selection"
+            )
+            
+            # Store time frame in session state
+            st.session_state['selected_time_frame'] = selected_time_frame
+            
             # Add Apply button
             col1, col2 = st.columns([1.2, 2.8])
             with col1:

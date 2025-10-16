@@ -12,7 +12,7 @@ from pathlib import Path
 import subprocess
 import json
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import threading
 import time
 from utils.ai_client import OpenArenaClient
@@ -191,16 +191,35 @@ class BaseAnalyzer(ABC):
     
     def get_git_history(self, file_path: str = None, max_commits: int = 100) -> List[Dict]:
         """
-        Get git commit history
+        Get git commit history with time frame filtering applied
         
         Args:
             file_path: Specific file to get history for (optional)
             max_commits: Maximum number of commits to retrieve
             
         Returns:
-            List of commit information dictionaries
+            List of commit information dictionaries filtered by time frame
         """
         if not self.repo:
+            # Check if we should show an error for no commits
+            error_info = self.check_commit_filter_error()
+            if not error_info:
+                # Set error for no git repository
+                selected_time_frame = st.session_state.get('selected_time_frame', 'all')
+                if selected_time_frame != 'all':
+                    time_frame_display = {
+                        '1_year': 'last 1 year',
+                        '2_years': 'last 2 years',
+                        '3_years': 'last 3 years', 
+                        '5_years': 'last 5 years'
+                    }.get(selected_time_frame, selected_time_frame)
+                    
+                    st.session_state['commit_filter_error'] = {
+                        'message': f"No git repository found. Unable to analyze commits for the {time_frame_display}.",
+                        'total_commits': 0,
+                        'selected_period': time_frame_display,
+                        'has_commits': False
+                    }
             return []
         
         try:
@@ -217,11 +236,123 @@ class BaseAnalyzer(ABC):
                     'files_changed': len(commit.stats.files)
                 })
             
-            return commits
+            # Apply time frame filtering
+            return self.filter_commits_by_time_frame(commits)
         except Exception as e:
             # Completely suppress git history warnings for cloned repositories
             # Only log if it's a local repository that should have working git
             return []
+    
+    def filter_commits_by_time_frame(self, commits: List[Dict]) -> List[Dict]:
+        """
+        Filter commits based on selected time frame from session state
+        
+        Args:
+            commits: List of commit dictionaries with 'date' field
+            
+        Returns:
+            Filtered list of commits
+        """
+        # Get selected time frame from session state
+        selected_time_frame = st.session_state.get('selected_time_frame', 'all')
+        
+        # If 'all' is selected, return all commits
+        if selected_time_frame == 'all':
+            return commits
+        
+        # Calculate cutoff date based on selection
+        now = datetime.now()
+        cutoff_date = None
+        
+        if selected_time_frame == '1_year':
+            cutoff_date = now - timedelta(days=365)
+        elif selected_time_frame == '2_years':
+            cutoff_date = now - timedelta(days=2*365)
+        elif selected_time_frame == '3_years':
+            cutoff_date = now - timedelta(days=3*365)
+        elif selected_time_frame == '5_years':
+            cutoff_date = now - timedelta(days=5*365)
+        else:
+            # Default to all commits if unknown selection
+            return commits
+        
+        # Filter commits based on cutoff date
+        filtered_commits = []
+        for commit in commits:
+            commit_date = commit.get('date')
+            if commit_date:
+                # Handle both timezone-aware and naive datetime objects
+                if hasattr(commit_date, 'replace'):
+                    # It's a datetime object
+                    if commit_date.tzinfo is not None:
+                        # Convert to naive datetime for comparison
+                        commit_date_naive = commit_date.replace(tzinfo=None)
+                    else:
+                        commit_date_naive = commit_date
+                    
+                    if commit_date_naive >= cutoff_date:
+                        filtered_commits.append(commit)
+                else:
+                    # If date is not a datetime object, include it
+                    filtered_commits.append(commit)
+            else:
+                # If no date field, include the commit
+                filtered_commits.append(commit)
+        
+        # Check if filtering resulted in empty commits and provide appropriate error handling
+        if not filtered_commits and commits and selected_time_frame != 'all':
+            # Store error information in session state for analyzers to check
+            time_frame_display = {
+                '1_year': 'last 1 year',
+                '2_years': 'last 2 years', 
+                '3_years': 'last 3 years',
+                '5_years': 'last 5 years'
+            }.get(selected_time_frame, selected_time_frame)
+            
+            st.session_state['commit_filter_error'] = {
+                'message': f"No commits found for the {time_frame_display}. The repository has {len(commits)} total commits, but none fall within the selected time period.",
+                'total_commits': len(commits),
+                'selected_period': time_frame_display,
+                'has_commits': len(commits) > 0
+            }
+        else:
+            # Clear any previous error
+            if 'commit_filter_error' in st.session_state:
+                del st.session_state['commit_filter_error']
+        
+        return filtered_commits
+    
+    def check_commit_filter_error(self) -> Dict[str, Any]:
+        """
+        Check if there's a commit filtering error and return error details
+        
+        Returns:
+            Dictionary with error details or empty dict if no error
+        """
+        return st.session_state.get('commit_filter_error', {})
+    
+    def display_commit_filter_error(self) -> bool:
+        """
+        Display commit filter error if present
+        
+        Returns:
+            True if error was displayed, False otherwise
+        """
+        error_info = self.check_commit_filter_error()
+        if error_info:
+            st.error(f"⚠️ {error_info['message']}")
+            
+            # Show helpful suggestions
+            if error_info['has_commits']:
+                st.info("💡 **Suggestions:**\n"
+                       "- Try selecting 'All commits' to see the full repository history\n"
+                       "- Choose a longer time period if the repository is older\n"
+                       "- The repository may have been inactive during the selected period")
+            else:
+                st.warning("This repository has no commit history available.")
+            
+            return True
+        return False
     
     def get_file_contributors(self, file_path: str) -> Dict[str, int]:
         """
