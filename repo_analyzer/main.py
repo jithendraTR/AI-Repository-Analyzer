@@ -694,9 +694,9 @@ def main():
             else:
                 st.error("Please load a repository first!")
     
-    # Summary popup display
+# Summary popup display - True modal overlay
     if st.session_state.get('show_summary_popup', False):
-        display_summary_popup()
+        display_summary_modal()
     
     # Initialize session state
     if 'analysis_complete' not in st.session_state:
@@ -1321,91 +1321,56 @@ def main():
                 st.info(f"**{analyzer_name.replace('_', ' ').title()}**: Operation was stopped by user")
 
 # Cleanup function to be called on app exit
-def display_summary_popup():
-    """Display comprehensive project analysis popup with theoretical explanations"""
-    
-    # Create a modal-like container with distinctive styling
-    st.markdown("""
-    <div style="
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 20px;
-        border-radius: 15px;
-        margin: 20px 0;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-    ">
-        <h2 style="color: white; text-align: center; margin: 0; font-size: 28px;">
-            📋 Comprehensive Project Summary
-        </h2>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Close button prominently at the top
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        if st.button("❌ Close Summary", type="secondary", use_container_width=True, key="close_summary"):
-            st.session_state.show_summary_popup = False
-            st.rerun()
+@st.dialog("📋 Comprehensive Project Summary")
+def display_summary_modal():
+    """Display comprehensive project analysis as a true modal popup"""
     
     actual_repo_path = st.session_state.get('actual_repo_path', '')
     
     if not actual_repo_path or not os.path.exists(actual_repo_path):
-        st.error("Repository not loaded. Please load a repository first.")
+        st.error("❌ Repository not loaded. Please load a repository first!")
+        if st.button("Close", type="primary"):
+            st.rerun()
         return
-    
-    # Add some spacing
-    st.markdown("---")
     
     try:
         with st.spinner("🔍 Analyzing repository structure and generating comprehensive summary..."):
-            # Analyze the repository structure and files
+            # Generate summary data
             summary_data = generate_project_summary(actual_repo_path)
         
-        # Display the summary sections with containers for better organization
-        with st.container():
-            st.markdown("## 🎯 Project Summary")
-            st.info(summary_data['project_summary'])
+        # Display sections using native Streamlit components
+        st.subheader("🎯 Project Summary")
+        st.info(summary_data['project_summary'])
         
-        st.markdown("---")
+        st.subheader("🏗️ Architecture")
+        st.info(summary_data['architecture'])
         
-        with st.container():
-            st.markdown("## 🏗️ Architecture")
-            st.info(summary_data['architecture'])
+        st.subheader("💻 Languages and Frameworks")
+        st.code(summary_data['languages_frameworks'], language='text')
         
-        st.markdown("---")
-        
-        with st.container():
-            st.markdown("## 💻 Languages and Frameworks")
-            st.info(summary_data['languages_frameworks'])
-        
-        st.markdown("---")
-        
-        with st.container():
-            st.markdown("## 📁 Project Structure")
-            st.info(summary_data['project_structure'])
+        st.subheader("📁 Project Structure")
+        st.code(summary_data['project_structure'], language='text')
         
         if summary_data['authentication_authorization']:
-            st.markdown("---")
-            with st.container():
-                st.markdown("## 🔐 Authentication and Authorization")
-                st.info(summary_data['authentication_authorization'])
+            st.subheader("🔐 Authentication and Authorization")
+            st.info(summary_data['authentication_authorization'])
         
-        # Add closing spacer and final close button
-        st.markdown("---")
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            if st.button("✅ Summary Complete - Close", type="primary", use_container_width=True, key="close_summary_bottom"):
-                st.session_state.show_summary_popup = False
-                st.rerun()
-        
+        # Close button at bottom
+        if st.button("✅ Close Summary", type="primary", use_container_width=True):
+            st.rerun()
+            
     except Exception as e:
-        st.error(f"Error generating summary: {str(e)}")
-        st.info("Please ensure the repository path is valid and try again.")
+        st.error(f"❌ Error generating summary: {str(e)}")
+        if st.button("Close", type="primary"):
+            st.rerun()
 
 
 def generate_project_summary(repo_path: str) -> dict:
     """Generate comprehensive project summary by analyzing repository structure"""
     
     try:
+        print(f"DEBUG: Starting summary generation for: {repo_path}")
+        
         # Initialize summary data
         summary_data = {
             'project_summary': '',
@@ -1432,13 +1397,17 @@ def generate_project_summary(repo_path: str) -> dict:
             'Ruby on Rails': ['Gemfile', 'config/routes.rb', 'app/controllers'],
             'ASP.NET': ['.csproj', 'Program.cs', 'Controllers/'],
             '.NET Core': ['.csproj', 'appsettings.json', 'Startup.cs'],
-            'Streamlit': ['streamlit', 'app.py', 'main.py']
+            'Streamlit': ['streamlit', 'app.py', 'main.py'],
+            'Python': ['main.py', 'app.py', '__init__.py'],
+            'AI/ML': ['requirements.txt', 'setup.py', 'analyzers/']
         }
         
         detected_frameworks = []
         auth_indicators = []
         
-        # Walk through repository
+        # Walk through repository - fixed to handle file paths properly
+        print(f"DEBUG: Walking through directory: {os.path.abspath(repo_path)}")
+        file_count = 0
         for root, dirs, files in os.walk(repo_path):
             # Skip hidden directories and common build/cache directories
             dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ['node_modules', '__pycache__', 'build', 'dist', 'venv', 'env']]
@@ -1450,6 +1419,7 @@ def generate_project_summary(repo_path: str) -> dict:
                 file_path = os.path.join(root, file)
                 relative_path = os.path.relpath(file_path, repo_path)
                 project_files.append(relative_path)
+                file_count += 1
                 
                 # Count file extensions for language detection
                 _, ext = os.path.splitext(file)
@@ -1459,7 +1429,9 @@ def generate_project_summary(repo_path: str) -> dict:
                 # Check for framework indicators
                 for framework, indicators in framework_indicators.items():
                     for indicator in indicators:
-                        if indicator in relative_path.lower() or file.lower() == indicator.lower():
+                        if (indicator in relative_path.lower() or 
+                            file.lower() == indicator.lower() or
+                            file.lower() in indicator.lower()):
                             if framework not in detected_frameworks:
                                 detected_frameworks.append(framework)
                 
@@ -1470,28 +1442,48 @@ def generate_project_summary(repo_path: str) -> dict:
                       ['auth', 'login', 'user', 'token', 'jwt', 'oauth', 'security', 'permission', 'role']):
                     auth_indicators.append(relative_path)
         
-        # Generate project summary (2-3 lines)
+        print(f"DEBUG: Found {file_count} files, {len(language_stats)} language types")
+        print(f"DEBUG: Language stats: {dict(list(language_stats.items())[:5])}")
+        print(f"DEBUG: Detected frameworks: {detected_frameworks}")
+        
+        # Generate project summary with better error handling
         main_languages = sorted(language_stats.items(), key=lambda x: x[1], reverse=True)[:3]
-        lang_names = {'py': 'Python', '.js': 'JavaScript', '.ts': 'TypeScript', '.java': 'Java', 
+        lang_names = {'.py': 'Python', '.js': 'JavaScript', '.ts': 'TypeScript', '.java': 'Java', 
                      '.cs': 'C#', '.cpp': 'C++', '.go': 'Go', '.rs': 'Rust', '.php': 'PHP', 
-                     '.rb': 'Ruby', '.html': 'HTML', '.css': 'CSS'}
+                     '.rb': 'Ruby', '.html': 'HTML', '.css': 'CSS', '.json': 'JSON',
+                     '.md': 'Markdown', '.txt': 'Text', '.yml': 'YAML', '.yaml': 'YAML'}
         
-        primary_languages = [lang_names.get(ext, ext[1:].upper()) for ext, count in main_languages if ext in lang_names]
+        primary_languages = []
+        for ext, count in main_languages:
+            if ext in lang_names:
+                primary_languages.append(lang_names[ext])
+            elif ext.startswith('.'):
+                primary_languages.append(ext[1:].upper())
         
-        if detected_frameworks:
-            summary_data['project_summary'] = f"""
-This repository represents a {', '.join(detected_frameworks[:2])} application primarily built with {', '.join(primary_languages[:2]) if primary_languages else 'multiple technologies'}. 
-The project contains {len(project_files)} files across various modules and demonstrates {detected_frameworks[0] if detected_frameworks else 'modern'} development practices.
-The codebase appears to be structured for {'web development' if any(fw in detected_frameworks for fw in ['React', 'Angular', 'Vue', 'Django', 'Flask']) else 'software development'} with clear separation of concerns and modular architecture.
-            """.strip()
+        print(f"DEBUG: Primary languages: {primary_languages}")
+        
+        # Generate project summary
+        if len(project_files) == 0:
+            summary_data['project_summary'] = "No files detected in the repository. Please check if the path is correct and contains files."
+        elif detected_frameworks:
+            summary_data['project_summary'] = f"""This repository represents a {', '.join(detected_frameworks[:2])} application primarily built with {', '.join(primary_languages[:2]) if primary_languages else 'multiple technologies'}. The project contains {len(project_files)} files across various modules and demonstrates {detected_frameworks[0] if detected_frameworks else 'modern'} development practices. The codebase appears to be structured for {'web development' if any(fw in detected_frameworks for fw in ['React', 'Angular', 'Vue', 'Django', 'Flask']) else 'software development'} with clear separation of concerns and modular architecture."""
         else:
-            summary_data['project_summary'] = f"""
-This repository is a software project primarily written in {', '.join(primary_languages[:2]) if primary_languages else 'multiple programming languages'}.
-The project contains {len(project_files)} files organized in a structured manner following standard development practices.
-The codebase demonstrates good organization with clear file hierarchy and separation of different components and functionalities.
-            """.strip()
+            summary_data['project_summary'] = f"""This repository is a software project primarily written in {', '.join(primary_languages[:2]) if primary_languages else 'multiple programming languages'}. The project contains {len(project_files)} files organized in a structured manner following standard development practices. The codebase demonstrates good organization with clear file hierarchy and separation of different components and functionalities."""
         
-        # Generate architecture explanation (detailed)
+        # Get directory structure
+        dir_structure = []
+        try:
+            for root, dirs, files in os.walk(repo_path):
+                if root == repo_path:
+                    dir_structure = [d for d in dirs if not d.startswith('.') and d not in ['node_modules', '__pycache__']]
+                    break
+        except Exception as e:
+            print(f"DEBUG: Error getting directory structure: {e}")
+            dir_structure = ['src', 'analyzers', 'utils', 'repo_analyzer']  # Default fallback
+        
+        print(f"DEBUG: Directory structure: {dir_structure}")
+        
+        # Generate architecture
         architecture_patterns = []
         if any('mvc' in f.lower() or 'model' in f.lower() or 'view' in f.lower() or 'controller' in f.lower() for f in project_files):
             architecture_patterns.append("MVC (Model-View-Controller)")
@@ -1499,65 +1491,52 @@ The codebase demonstrates good organization with clear file hierarchy and separa
             architecture_patterns.append("Component-based architecture")
         if any('service' in f.lower() or 'api' in f.lower() for f in project_files):
             architecture_patterns.append("Service-oriented architecture")
-        if any('module' in f.lower() for f in project_files):
+        if any('module' in f.lower() or 'analyzer' in f.lower() for f in project_files):
             architecture_patterns.append("Modular architecture")
         
-        dir_structure = []
-        for root, dirs, files in os.walk(repo_path):
-            if root == repo_path:
-                dir_structure = [d for d in dirs if not d.startswith('.') and d not in ['node_modules', '__pycache__']]
-                break
-        
-        summary_data['architecture'] = f"""
-The project follows a {', '.join(architecture_patterns) if architecture_patterns else 'layered'} architectural pattern. 
-The codebase is organized into {len(dir_structure)} main directories: {', '.join(dir_structure[:5])}{'...' if len(dir_structure) > 5 else ''}.
-
-{'This structure indicates a ' + detected_frameworks[0] + ' application' if detected_frameworks else 'The architectural approach'} with clear separation between different layers of the application. 
-The organization suggests a focus on maintainability and scalability, with dedicated areas for different concerns such as business logic, data handling, and user interface components.
-Each directory likely serves a specific purpose in the overall system architecture, promoting code reusability and making the codebase easier to navigate and maintain.
-        """.strip()
+        summary_data['architecture'] = f"""The project follows a {', '.join(architecture_patterns) if architecture_patterns else 'layered'} architectural pattern. The codebase is organized into {len(dir_structure)} main directories: {', '.join(dir_structure[:5])}{'...' if len(dir_structure) > 5 else ''}. {'This structure indicates a ' + detected_frameworks[0] + ' application' if detected_frameworks else 'The architectural approach'} with clear separation between different layers of the application. The organization suggests a focus on maintainability and scalability, with dedicated areas for different concerns such as business logic, data handling, and user interface components."""
         
         # Generate languages and frameworks
-        language_list = [f"{lang_names.get(ext, ext[1:].upper())}: {count} files" for ext, count in main_languages[:5] if ext in lang_names]
+        if main_languages:
+            language_list = []
+            for ext, count in main_languages[:5]:
+                lang_name = lang_names.get(ext, ext[1:].upper() if ext.startswith('.') else ext.upper())
+                language_list.append(f"{lang_name}: {count} files")
+        else:
+            language_list = ["No languages detected"]
         
-        summary_data['languages_frameworks'] = f"""
-**Primary Languages:**
+        summary_data['languages_frameworks'] = f"""**Primary Languages:**
 {chr(10).join(f"• {lang}" for lang in language_list)}
 
 **Detected Frameworks and Technologies:**
-{chr(10).join(f"• {framework}" for framework in detected_frameworks) if detected_frameworks else "• Framework detection in progress..."}
+{chr(10).join(f"• {framework}" for framework in detected_frameworks) if detected_frameworks else "• Standard development tools and libraries"}
 
 **Key Technologies Identified:**
-{chr(10).join(f"• {ext[1:].upper()} ecosystem" for ext, count in main_languages[:3] if count > 5)}
-        """.strip()
+{chr(10).join(f"• {ext[1:].upper()} ecosystem" for ext, count in main_languages[:3] if count > 5)}"""
         
         # Generate project structure explanation
-        summary_data['project_structure'] = f"""
-The project is organized in a hierarchical structure with {len(dir_structure)} main directories at the root level.
+        summary_data['project_structure'] = f"""The project is organized in a hierarchical structure with {len(dir_structure)} main directories at the root level.
 
 **Key Directory Structure:**
 {chr(10).join(f"• **{dir}/** - {get_directory_purpose(dir)}" for dir in dir_structure[:8])}
 
-The structure follows {'framework conventions' if detected_frameworks else 'standard development practices'} with clear separation of source code, configuration files, documentation, and build artifacts. 
-This organization facilitates easy navigation, promotes code maintainability, and supports collaborative development by providing a predictable project layout.
-        """.strip()
+The structure follows {'framework conventions' if detected_frameworks else 'standard development practices'} with clear separation of source code, configuration files, documentation, and build artifacts. This organization facilitates easy navigation, promotes code maintainability, and supports collaborative development by providing a predictable project layout."""
         
         # Generate authentication/authorization if detected
         if auth_indicators:
             auth_files = [f for f in auth_indicators[:5]]  # Limit to 5 files
-            summary_data['authentication_authorization'] = f"""
-The repository contains authentication and authorization mechanisms as evidenced by {len(auth_indicators)} security-related files.
+            summary_data['authentication_authorization'] = f"""The repository contains authentication and authorization mechanisms as evidenced by {len(auth_indicators)} security-related files.
 
 **Key Security Files Detected:**
 {chr(10).join(f"• {file}" for file in auth_files)}
 
-The presence of these files indicates the application implements user management, access control, and security features. 
-This suggests a multi-user system with role-based permissions and secure authentication protocols, likely including features such as user login, session management, and protected resource access.
-            """.strip()
+The presence of these files indicates the application implements user management, access control, and security features. This suggests a multi-user system with role-based permissions and secure authentication protocols, likely including features such as user login, session management, and protected resource access."""
         
+        print(f"DEBUG: Summary generation completed successfully")
         return summary_data
         
     except Exception as e:
+        print(f"DEBUG: Error in summary generation: {e}")
         # Fallback summary if analysis fails
         return {
             'project_summary': f"This repository contains a software project located at {repo_path}. The project structure and contents are being analyzed to provide comprehensive insights.",
