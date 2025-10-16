@@ -708,19 +708,31 @@ def main():
     </style>
     """, unsafe_allow_html=True)
     
-    # Main app header with summary button
-    col1, col2 = st.columns([4, 1])
+    # Main app header with summary and dev assistance buttons
+    col1, col2 = st.columns([3, 1])
     with col1:
         st.title("🔍 AI-Powered Codebase Analyzer")
         st.markdown("Accelerate codebase onboarding and architectural discovery")
     
     with col2:
-        # Summary button positioned at top right
-        if st.button("📋 Summary", type="secondary", help="Show comprehensive project analysis", key="summary_button"):
-            if st.session_state.get('actual_repo_path'):
-                st.session_state.show_summary_popup = True
-            else:
-                st.error("Please load a repository first!")
+        # Create two columns for the buttons
+        btn_col1, btn_col2 = st.columns(2)
+        
+        with btn_col1:
+            # Dev Assistance button
+            if st.button("🤖 Dev Assistant", type="secondary", help="Get AI-powered development assistance", key="dev_assistance_button"):
+                if st.session_state.get('actual_repo_path'):
+                    st.session_state.show_dev_assistance_popup = True
+                else:
+                    st.error("Please load a repository first!")
+        
+        with btn_col2:
+            # Summary button
+            if st.button("📋 Summary", type="secondary", help="Show comprehensive project analysis", key="summary_button"):
+                if st.session_state.get('actual_repo_path'):
+                    st.session_state.show_summary_popup = True
+                else:
+                    st.error("Please load a repository first!")
 
     # Handle summary popup display using st.dialog as context manager
     if st.session_state.get('show_summary_popup', False):
@@ -769,6 +781,38 @@ def main():
         
         # Call the dialog function
         show_summary_dialog()
+
+    # Handle dev assistance popup display using st.dialog as context manager
+    if st.session_state.get('show_dev_assistance_popup', False):
+        @st.dialog("🤖 Development Setup Assistant")
+        def show_dev_assistance_dialog():
+            actual_repo_path = st.session_state.get('actual_repo_path', '')
+            
+            if not actual_repo_path or not os.path.exists(actual_repo_path):
+                st.error("❌ Repository not loaded. Please load a repository first!")
+                if st.button("Close", type="primary"):
+                    st.session_state.show_dev_assistance_popup = False
+                    st.rerun()
+            else:
+                try:
+                    # Create and render the chatbot directly in the popup
+                    chatbot_analyzer = DevAssistanceChatbotAnalyzer(actual_repo_path)
+                    chatbot_analyzer.render()
+                    
+                    # Close button at bottom
+                    st.markdown("---")
+                    if st.button("✅ Close Assistant", type="primary", use_container_width=True):
+                        st.session_state.show_dev_assistance_popup = False
+                        st.rerun()
+                        
+                except Exception as e:
+                    st.error(f"❌ Error loading Development Assistant: {str(e)}")
+                    if st.button("Close", type="primary"):
+                        st.session_state.show_dev_assistance_popup = False
+                        st.rerun()
+        
+        # Call the dialog function
+        show_dev_assistance_dialog()
 
     # Apply CSS class conditionally for sidebar collapse with ultra-aggressive DOM manipulation
     if st.session_state.sidebar_collapsed:
@@ -1294,16 +1338,12 @@ def main():
         successful_results = {k: v for k, v in results.items() if v.get('success', False)}
         
         if successful_results:
-            # Create tabs for successful analyses + Dev Assistance tab
+            # Create tabs for successful analyses (excluding Dev Assistance which is now a top-level button)
             tab_names = []
             tab_data = []
             
-            # Add Dev Assistance tab first
-            tab_names.append("🤖 Dev Assistance")
-            tab_data.append(("dev_assistance_chatbot", {"special_tab": True}))
-            
             for analyzer_name, result in successful_results.items():
-                if analyzer_name != 'dev_assistance_chatbot':  # Skip if already added
+                if analyzer_name != 'dev_assistance_chatbot':  # Skip Dev Assistance - it's now a top-level button
                     display_name = analyzer_name.replace('_', ' ').title()
                     tab_names.append(display_name)
                     tab_data.append((analyzer_name, result))
