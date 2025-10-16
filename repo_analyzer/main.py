@@ -4,6 +4,14 @@ Main application entry point with tabbed interface for different analysis types
 """
 
 import streamlit as st
+
+# MUST be the first Streamlit command
+st.set_page_config(
+    page_title="AI Codebase Analyzer",
+    page_icon="🔍",
+    layout="wide"
+)
+
 import os
 from dotenv import load_dotenv
 import asyncio
@@ -369,11 +377,29 @@ class ParallelAIAnalyzer:
         return results
 
 def main():
-    st.set_page_config(
-        page_title="AI Codebase Analyzer",
-        page_icon="🔍",
-        layout="wide"
-    )
+    # Initialize session state
+    if 'analysis_complete' not in st.session_state:
+        st.session_state.analysis_complete = False
+        if 'results' not in st.session_state:
+            st.session_state.results = {}
+        if 'sidebar_collapsed' not in st.session_state:
+            st.session_state.sidebar_collapsed = False
+        if 'analysis_running' not in st.session_state:
+            st.session_state.analysis_running = False
+        if 'current_analyzer' not in st.session_state:
+            st.session_state.current_analyzer = None
+        if 'last_repo_path' not in st.session_state:
+            st.session_state.last_repo_path = ""
+        if 'success_message' not in st.session_state:
+            st.session_state.success_message = ""
+        if 'success_message_time' not in st.session_state:
+            st.session_state.success_message_time = 0
+        if 'cancellation_token' not in st.session_state:
+            st.session_state.cancellation_token = None
+        if 'prepared_repo_info' not in st.session_state:
+            st.session_state.prepared_repo_info = None
+        if 'actual_repo_path' not in st.session_state:
+            st.session_state.actual_repo_path = ""
     
     # Hide Streamlit's default deploy button and menu + Fix styling + HIDE CHAIN LINK ICONS
     hide_streamlit_style = """
@@ -693,35 +719,51 @@ def main():
                 st.session_state.show_summary_popup = True
             else:
                 st.error("Please load a repository first!")
-    
-# Summary popup display - True modal overlay
+
+    # Handle summary popup display using st.dialog as context manager
     if st.session_state.get('show_summary_popup', False):
-        display_summary_modal()
-    
-    # Initialize session state
-    if 'analysis_complete' not in st.session_state:
-        st.session_state.analysis_complete = False
-    if 'results' not in st.session_state:
-        st.session_state.results = {}
-    if 'sidebar_collapsed' not in st.session_state:
-        st.session_state.sidebar_collapsed = False
-    if 'analysis_running' not in st.session_state:
-        st.session_state.analysis_running = False
-    if 'current_analyzer' not in st.session_state:
-        st.session_state.current_analyzer = None
-    if 'last_repo_path' not in st.session_state:
-        st.session_state.last_repo_path = ""
-    if 'success_message' not in st.session_state:
-        st.session_state.success_message = ""
-    if 'success_message_time' not in st.session_state:
-        st.session_state.success_message_time = 0
-    if 'cancellation_token' not in st.session_state:
-        st.session_state.cancellation_token = None
-    if 'prepared_repo_info' not in st.session_state:
-        st.session_state.prepared_repo_info = None
-    if 'actual_repo_path' not in st.session_state:
-        st.session_state.actual_repo_path = ""
-    
+        with st.dialog("📋 Comprehensive Project Summary"):
+            actual_repo_path = st.session_state.get('actual_repo_path', '')
+            
+            if not actual_repo_path or not os.path.exists(actual_repo_path):
+                st.error("❌ Repository not loaded. Please load a repository first!")
+                if st.button("Close", type="primary"):
+                    st.session_state.show_summary_popup = False
+                    st.rerun()
+            else:
+                try:
+                    with st.spinner("🔍 Analyzing repository structure and generating comprehensive summary..."):
+                        # Generate summary data
+                        summary_data = generate_project_summary(actual_repo_path)
+                    
+                    # Display sections using native Streamlit components
+                    st.subheader("🎯 Project Summary")
+                    st.info(summary_data['project_summary'])
+                    
+                    st.subheader("🏗️ Architecture")
+                    st.info(summary_data['architecture'])
+                    
+                    st.subheader("💻 Languages and Frameworks")
+                    st.code(summary_data['languages_frameworks'], language='text')
+                    
+                    st.subheader("📁 Project Structure")
+                    st.code(summary_data['project_structure'], language='text')
+                    
+                    if summary_data['authentication_authorization']:
+                        st.subheader("🔐 Authentication and Authorization")
+                        st.info(summary_data['authentication_authorization'])
+                    
+                    # Close button at bottom
+                    if st.button("✅ Close Summary", type="primary", use_container_width=True):
+                        st.session_state.show_summary_popup = False
+                        st.rerun()
+                        
+                except Exception as e:
+                    st.error(f"❌ Error generating summary: {str(e)}")
+                    if st.button("Close", type="primary"):
+                        st.session_state.show_summary_popup = False
+                        st.rerun()
+
     # Apply CSS class conditionally for sidebar collapse with ultra-aggressive DOM manipulation
     if st.session_state.sidebar_collapsed:
         st.markdown("""
@@ -925,10 +967,8 @@ def main():
                                 st.session_state.last_repo_path = repo_path  # Keep original URL for display
                             else:
                                 st.error(f"❌ Failed to clone Git repository: {clone_result['error']}")
-                                return  # Exit early on clone failure
                         else:
                             st.error(f"❌ Repository validation failed: {validation_result['error']}")
-                            return
                     else:
                         # It's a local path - use the original fast validation (PRESERVE ORIGINAL PERFORMANCE)
                         if os.path.exists(repo_path):
@@ -944,7 +984,6 @@ def main():
                             st.session_state.last_repo_path = repo_path
                         else:
                             st.error("❌ Repository path does not exist. Please check the path and try again.")
-                            return
                     
                     # Show success message
                     st.session_state.success_message = success_msg
@@ -1321,49 +1360,6 @@ def main():
                 st.info(f"**{analyzer_name.replace('_', ' ').title()}**: Operation was stopped by user")
 
 # Cleanup function to be called on app exit
-@st.dialog("📋 Comprehensive Project Summary")
-def display_summary_modal():
-    """Display comprehensive project analysis as a true modal popup"""
-    
-    actual_repo_path = st.session_state.get('actual_repo_path', '')
-    
-    if not actual_repo_path or not os.path.exists(actual_repo_path):
-        st.error("❌ Repository not loaded. Please load a repository first!")
-        if st.button("Close", type="primary"):
-            st.rerun()
-        return
-    
-    try:
-        with st.spinner("🔍 Analyzing repository structure and generating comprehensive summary..."):
-            # Generate summary data
-            summary_data = generate_project_summary(actual_repo_path)
-        
-        # Display sections using native Streamlit components
-        st.subheader("🎯 Project Summary")
-        st.info(summary_data['project_summary'])
-        
-        st.subheader("🏗️ Architecture")
-        st.info(summary_data['architecture'])
-        
-        st.subheader("💻 Languages and Frameworks")
-        st.code(summary_data['languages_frameworks'], language='text')
-        
-        st.subheader("📁 Project Structure")
-        st.code(summary_data['project_structure'], language='text')
-        
-        if summary_data['authentication_authorization']:
-            st.subheader("🔐 Authentication and Authorization")
-            st.info(summary_data['authentication_authorization'])
-        
-        # Close button at bottom
-        if st.button("✅ Close Summary", type="primary", use_container_width=True):
-            st.session_state.show_summary_popup = False
-            st.rerun()
-            
-    except Exception as e:
-        st.error(f"❌ Error generating summary: {str(e)}")
-        if st.button("Close", type="primary"):
-            st.rerun()
 
 
 def generate_project_summary(repo_path: str) -> dict:
