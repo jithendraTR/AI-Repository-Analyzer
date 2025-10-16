@@ -7,8 +7,9 @@ import streamlit as st
 
 # MUST be the first Streamlit command
 st.set_page_config(
-    page_title="AI Codebase Analyzer",
+    page_title="AI Repository Analysis",   
     page_icon="🔍",
+
     layout="wide"
 )
 
@@ -38,6 +39,7 @@ from analyzers.version_governance import VersionGovernanceAnalyzer
 from analyzers.tech_debt_detection import TechDebtDetectionAnalyzer
 from analyzers.design_patterns import DesignPatternAnalyzer
 from analyzers.singular_product_vision import SingularProductVisionAnalyzer
+from analyzers.dev_assistance_chatbot import DevAssistanceChatbotAnalyzer
 from utils.ai_client import OpenArenaClient
 from utils.git_handler import validate_and_prepare_repository, git_handler
 
@@ -74,7 +76,8 @@ class ParallelAIAnalyzer:
             'version_governance': VersionGovernanceAnalyzer(repo_path),
             'tech_debt': TechDebtDetectionAnalyzer(repo_path),
             'design_patterns': DesignPatternAnalyzer(repo_path),
-            'singular_product_vision': SingularProductVisionAnalyzer(repo_path)
+            'singular_product_vision': SingularProductVisionAnalyzer(repo_path),
+            'dev_assistance_chatbot': DevAssistanceChatbotAnalyzer(repo_path)
         }
         self.cancellation_token = None
     
@@ -380,26 +383,36 @@ def main():
     # Initialize session state
     if 'analysis_complete' not in st.session_state:
         st.session_state.analysis_complete = False
-        if 'results' not in st.session_state:
-            st.session_state.results = {}
-        if 'sidebar_collapsed' not in st.session_state:
-            st.session_state.sidebar_collapsed = False
-        if 'analysis_running' not in st.session_state:
-            st.session_state.analysis_running = False
-        if 'current_analyzer' not in st.session_state:
-            st.session_state.current_analyzer = None
-        if 'last_repo_path' not in st.session_state:
-            st.session_state.last_repo_path = ""
-        if 'success_message' not in st.session_state:
-            st.session_state.success_message = ""
-        if 'success_message_time' not in st.session_state:
-            st.session_state.success_message_time = 0
-        if 'cancellation_token' not in st.session_state:
-            st.session_state.cancellation_token = None
-        if 'prepared_repo_info' not in st.session_state:
-            st.session_state.prepared_repo_info = None
-        if 'actual_repo_path' not in st.session_state:
-            st.session_state.actual_repo_path = ""
+    if 'results' not in st.session_state:
+        st.session_state.results = {}
+    if 'sidebar_collapsed' not in st.session_state:
+        st.session_state.sidebar_collapsed = False
+    if 'analysis_running' not in st.session_state:
+        st.session_state.analysis_running = False
+    if 'current_analyzer' not in st.session_state:
+        st.session_state.current_analyzer = None
+    if 'last_repo_path' not in st.session_state:
+        st.session_state.last_repo_path = ""
+    if 'success_message' not in st.session_state:
+        st.session_state.success_message = ""
+    if 'success_message_time' not in st.session_state:
+        st.session_state.success_message_time = 0
+    if 'cancellation_token' not in st.session_state:
+        st.session_state.cancellation_token = None
+    if 'prepared_repo_info' not in st.session_state:
+        st.session_state.prepared_repo_info = None
+    if 'actual_repo_path' not in st.session_state:
+        st.session_state.actual_repo_path = ""
+    # Initialize popup states to prevent interference
+    if 'show_summary_popup' not in st.session_state:
+        st.session_state.show_summary_popup = False
+    if 'show_dev_assistance_popup' not in st.session_state:
+        st.session_state.show_dev_assistance_popup = False
+    
+    # CRITICAL: If analysis is running, force disable ALL popups to prevent dialog conflicts
+    if st.session_state.get('analysis_running', False):
+        st.session_state.show_summary_popup = False
+        st.session_state.show_dev_assistance_popup = False
     
     # Hide Streamlit's default deploy button and menu + Fix styling + HIDE CHAIN LINK ICONS
     hide_streamlit_style = """
@@ -706,22 +719,44 @@ def main():
     </style>
     """, unsafe_allow_html=True)
     
-    # Main app header with summary button
-    col1, col2 = st.columns([4, 1])
+    # Main app header with summary and dev assistance buttons
+    col1, col2 = st.columns([3, 1])
     with col1:
-        st.title("🔍 AI-Powered Codebase Analyzer")
-        st.markdown("Accelerate codebase onboarding and architectural discovery")
+        st.title("🔍 AI-Powered Repository Analysis")
+        st.markdown("Accelerate repository onboarding and architectural discovery")
     
     with col2:
-        # Summary button positioned at top right
-        if st.button("📋 Summary", type="secondary", help="Show comprehensive project analysis", key="summary_button"):
-            if st.session_state.get('actual_repo_path'):
-                st.session_state.show_summary_popup = True
-            else:
-                st.error("Please load a repository first!")
+        # Create two columns for the buttons
+        btn_col1, btn_col2 = st.columns(2)
+        
+        with btn_col1:
+            # Dev Assistance button - with explicit state control
+            dev_assistant_clicked = st.button("🤖 Dev Assistant", type="secondary", help="Get AI-powered development assistance", key="dev_assistance_button")
+            if dev_assistant_clicked:
+                if st.session_state.get('actual_repo_path'):
+                    # Ensure only one dialog is open at a time
+                    st.session_state.show_dev_assistance_popup = True
+                    st.session_state.show_summary_popup = False
+                    st.rerun()
+                else:
+                    st.error("Please load a repository first!")
+        
+        with btn_col2:
+            # Summary button - with explicit state control
+            summary_clicked = st.button("📋 Summary", type="secondary", help="Show comprehensive project analysis", key="summary_button")
+            if summary_clicked:
+                if st.session_state.get('actual_repo_path'):
+                    # Ensure only one dialog is open at a time
+                    st.session_state.show_summary_popup = True
+                    st.session_state.show_dev_assistance_popup = False
+                    st.rerun()
+                else:
+                    st.error("Please load a repository first!")
 
-    # Handle summary popup display using st.dialog as context manager
-    if st.session_state.get('show_summary_popup', False):
+    # Handle dialogs - ensure only one dialog is displayed at a time AND analysis is not running
+    if (st.session_state.get('show_summary_popup', False) and 
+        not st.session_state.get('show_dev_assistance_popup', False) and 
+        not st.session_state.get('analysis_running', False)):
         @st.dialog("📋 Comprehensive Project Summary")
         def show_summary_dialog():
             actual_repo_path = st.session_state.get('actual_repo_path', '')
@@ -767,6 +802,40 @@ def main():
         
         # Call the dialog function
         show_summary_dialog()
+
+    # Handle dev assistance popup display using st.dialog as context manager
+    elif (st.session_state.get('show_dev_assistance_popup', False) and 
+          not st.session_state.get('show_summary_popup', False) and 
+          not st.session_state.get('analysis_running', False)):
+        @st.dialog("🤖 Development Setup Assistant")
+        def show_dev_assistance_dialog():
+            actual_repo_path = st.session_state.get('actual_repo_path', '')
+            
+            if not actual_repo_path or not os.path.exists(actual_repo_path):
+                st.error("❌ Repository not loaded. Please load a repository first!")
+                if st.button("Close", type="primary"):
+                    st.session_state.show_dev_assistance_popup = False
+                    st.rerun()
+            else:
+                try:
+                    # Create and render the chatbot directly in the popup
+                    chatbot_analyzer = DevAssistanceChatbotAnalyzer(actual_repo_path)
+                    chatbot_analyzer.render()
+                    
+                    # Close button at bottom
+                    st.markdown("---")
+                    if st.button("✅ Close Assistant", type="primary", use_container_width=True):
+                        st.session_state.show_dev_assistance_popup = False
+                        st.rerun()
+                        
+                except Exception as e:
+                    st.error(f"❌ Error loading Development Assistant: {str(e)}")
+                    if st.button("Close", type="primary"):
+                        st.session_state.show_dev_assistance_popup = False
+                        st.rerun()
+        
+        # Call the dialog function
+        show_dev_assistance_dialog()
 
     # Apply CSS class conditionally for sidebar collapse with ultra-aggressive DOM manipulation
     if st.session_state.sidebar_collapsed:
@@ -1014,7 +1083,8 @@ def main():
                 'version_governance': '📦 Version Governance',
                 'tech_debt': '🔧 Technical Debt Detection',
                 'design_patterns': '🏗️ Design Patterns',
-                'singular_product_vision': '🎯 Singular Product Vision'
+                'singular_product_vision': '🎯 Singular Product Vision',
+                'dev_assistance_chatbot': '🤖 Dev Assistance Chatbot'
             }
             
             st.markdown("Choose which analyses to run on your repository")
@@ -1096,7 +1166,8 @@ def main():
                 'version_governance': '📦 Version Governance',
                 'tech_debt': '🔧 Technical Debt Detection',
                 'design_patterns': '🏗️ Design Patterns',
-                'singular_product_vision': '🎯 Singular Product Vision'
+                'singular_product_vision': '🎯 Singular Product Vision',
+                'dev_assistance_chatbot': '🤖 Dev Assistance Chatbot'
             }
             # Get selections from session state
             for key in analysis_options.keys():
@@ -1117,6 +1188,10 @@ def main():
                         st.rerun()
             elif not st.session_state.analysis_running:
                 if st.button(f"🚀 Run {selected_count} Selected Analyses", type="primary", use_container_width=True):
+                    # IMMEDIATELY clear all popup states when Run Analysis is clicked - before any validation
+                    st.session_state.show_summary_popup = False
+                    st.session_state.show_dev_assistance_popup = False
+                    
                     # Check if repository is properly loaded
                     actual_repo_path = st.session_state.get('actual_repo_path', '')
                     original_repo_path = st.session_state.get('last_repo_path', '')
@@ -1130,10 +1205,13 @@ def main():
                     elif not any(selected_analyses.values()):
                         st.error("Please select at least one analysis to run!")
                     else:
-                        # Start the analysis
+                        # Start the analysis - with comprehensive dialog blocking
                         st.session_state.analysis_running = True
                         st.session_state.analysis_complete = False
                         st.session_state.results = {}
+                        # FINAL DIALOG CLEARING before rerun
+                        st.session_state.show_summary_popup = False
+                        st.session_state.show_dev_assistance_popup = False
                         # Store selected analyses for the execution phase
                         st.session_state.selected_analyses = selected_analyses
                         st.rerun()
@@ -1174,6 +1252,10 @@ def main():
     
     # Handle analysis execution
     if st.session_state.analysis_running and not st.session_state.analysis_complete:
+        # AGGRESSIVELY force disable all popups during analysis to prevent any interference
+        st.session_state.show_summary_popup = False
+        st.session_state.show_dev_assistance_popup = False
+        
         st.markdown("## 🔄 Analysis in Progress")
         st.markdown("Running AI-powered analysis on your repository...")
         
@@ -1263,7 +1345,11 @@ def main():
     
     # Main content area
     elif not st.session_state.analysis_complete:
-        st.markdown("## 🚀 Welcome to AI Codebase Analyzer")
+        # AGGRESSIVE DIALOG CLEARING - ensure no dialogs show on main content area
+        st.session_state.show_summary_popup = False
+        st.session_state.show_dev_assistance_popup = False
+        
+        st.markdown("## 🚀 Welcome to AI Repository Analysis")
         
         st.markdown("""
         This tool helps you quickly understand and analyze any Git repository using AI-powered insights.
@@ -1290,63 +1376,76 @@ def main():
         successful_results = {k: v for k, v in results.items() if v.get('success', False)}
         
         if successful_results:
-            # Create tabs for successful analyses
+            # Create tabs for successful analyses (excluding Dev Assistance which is now a top-level button)
             tab_names = []
             tab_data = []
             
             for analyzer_name, result in successful_results.items():
-                display_name = analyzer_name.replace('_', ' ').title()
-                tab_names.append(display_name)
-                tab_data.append((analyzer_name, result))
+                if analyzer_name != 'dev_assistance_chatbot':  # Skip Dev Assistance - it's now a top-level button
+                    display_name = analyzer_name.replace('_', ' ').title()
+                    tab_names.append(display_name)
+                    tab_data.append((analyzer_name, result))
             
             tabs = st.tabs(tab_names)
             
             for i, (tab, (analyzer_name, result)) in enumerate(zip(tabs, tab_data)):
                 with tab:
-                    st.header(f"{analysis_options.get(analyzer_name, analyzer_name.replace('_', ' ').title())}")
-                    
-                    # First check if we should render with analyzer-specific UI
-                    analyzer_instance = None
-                    # Use actual_repo_path (could be local path or cloned Git repo path)
-                    actual_path = st.session_state.get('actual_repo_path', '')
-                    if actual_path and analyzer_name == 'timeline':
-                        analyzer_instance = TimelineAnalyzer(actual_path)
-                    elif actual_path and analyzer_name == 'expertise':
-                        analyzer_instance = ExpertiseMapper(actual_path)
-                    elif actual_path and analyzer_name == 'api_contracts':
-                        analyzer_instance = APIContractAnalyzer(actual_path)
-                    elif actual_path and analyzer_name == 'ai_context':
-                        analyzer_instance = AIContextAnalyzer(actual_path)
-                    elif actual_path and analyzer_name == 'risk_analysis':
-                        analyzer_instance = RiskAnalysisAnalyzer(actual_path)
-                    elif actual_path and analyzer_name == 'development_patterns':
-                        analyzer_instance = DevelopmentPatternsAnalyzer(actual_path)
-                    elif actual_path and analyzer_name == 'version_governance':
-                        analyzer_instance = VersionGovernanceAnalyzer(actual_path)
-                    elif actual_path and analyzer_name == 'tech_debt':
-                        analyzer_instance = TechDebtDetectionAnalyzer(actual_path)
-                    elif actual_path and analyzer_name == 'design_patterns':
-                        analyzer_instance = DesignPatternAnalyzer(actual_path)
-                    elif actual_path and analyzer_name == 'singular_product_vision':
-                        analyzer_instance = SingularProductVisionAnalyzer(actual_path)
-                    
-                    if analyzer_instance and hasattr(analyzer_instance, 'render'):
-                        # Store the analysis data in session state so the renderer can access it
-                        if 'analysis_data' in result:
-                            st.session_state[f"{analyzer_name}_analysis_data"] = result['analysis_data']
-                        # Render using the analyzer's custom renderer
-                        analyzer_instance.render()
-                    else:
-                        # Fallback to default rendering
-                        if 'insight' in result:
-                            st.markdown(result['insight'])
+                    # Handle special Dev Assistance tab
+                    if analyzer_name == 'dev_assistance_chatbot' and result.get('special_tab'):
+                        # Create and render the chatbot directly
+                        actual_path = st.session_state.get('actual_repo_path', '')
+                        if actual_path:
+                            chatbot_analyzer = DevAssistanceChatbotAnalyzer(actual_path)
+                            chatbot_analyzer.render()
                         else:
-                            st.error("No AI insight available for this analysis")
+                            st.error("❌ Repository not loaded. Please load a repository first!")
+                    else:
+                        st.header(f"{analysis_options.get(analyzer_name, analyzer_name.replace('_', ' ').title())}")
                         
-                        # Show raw data in expander if available
-                        if 'analysis_data' in result:
-                            with st.expander("📊 Raw Analysis Data"):
-                                st.json(result['analysis_data'])
+                        # First check if we should render with analyzer-specific UI
+                        analyzer_instance = None
+                        # Use actual_repo_path (could be local path or cloned Git repo path)
+                        actual_path = st.session_state.get('actual_repo_path', '')
+                        if actual_path and analyzer_name == 'timeline':
+                            analyzer_instance = TimelineAnalyzer(actual_path)
+                        elif actual_path and analyzer_name == 'expertise':
+                            analyzer_instance = ExpertiseMapper(actual_path)
+                        elif actual_path and analyzer_name == 'api_contracts':
+                            analyzer_instance = APIContractAnalyzer(actual_path)
+                        elif actual_path and analyzer_name == 'ai_context':
+                            analyzer_instance = AIContextAnalyzer(actual_path)
+                        elif actual_path and analyzer_name == 'risk_analysis':
+                            analyzer_instance = RiskAnalysisAnalyzer(actual_path)
+                        elif actual_path and analyzer_name == 'development_patterns':
+                            analyzer_instance = DevelopmentPatternsAnalyzer(actual_path)
+                        elif actual_path and analyzer_name == 'version_governance':
+                            analyzer_instance = VersionGovernanceAnalyzer(actual_path)
+                        elif actual_path and analyzer_name == 'tech_debt':
+                            analyzer_instance = TechDebtDetectionAnalyzer(actual_path)
+                        elif actual_path and analyzer_name == 'design_patterns':
+                            analyzer_instance = DesignPatternAnalyzer(actual_path)
+                        elif actual_path and analyzer_name == 'singular_product_vision':
+                            analyzer_instance = SingularProductVisionAnalyzer(actual_path)
+                        elif actual_path and analyzer_name == 'ai_assistance_dev_tool':
+                            analyzer_instance = AIAssistanceDevToolAnalyzer(actual_path)
+                        
+                        if analyzer_instance and hasattr(analyzer_instance, 'render'):
+                            # Store the analysis data in session state so the renderer can access it
+                            if 'analysis_data' in result:
+                                st.session_state[f"{analyzer_name}_analysis_data"] = result['analysis_data']
+                            # Render using the analyzer's custom renderer
+                            analyzer_instance.render()
+                        else:
+                            # Fallback to default rendering
+                            if 'insight' in result:
+                                st.markdown(result['insight'])
+                            else:
+                                st.error("No AI insight available for this analysis")
+                            
+                            # Show raw data in expander if available
+                            if 'analysis_data' in result:
+                                with st.expander("📊 Raw Analysis Data"):
+                                    st.json(result['analysis_data'])
         
         # Show any failures (excluding cancelled operations)
         failed_results = {k: v for k, v in results.items() 
