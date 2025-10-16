@@ -79,7 +79,6 @@ class SingularProductVisionAnalyzer(BaseAnalyzer):
             "feature_architecture": feature_analysis,
             "api_consistency": api_consistency,
             "development_focus": {},  # Skip for speed
-            "configuration_consistency": {},  # Skip for speed
             "vision_coherence_score": self._calculate_fast_vision_score(
                 vision_docs, feature_analysis, api_consistency
             ),
@@ -330,7 +329,7 @@ class SingularProductVisionAnalyzer(BaseAnalyzer):
             return cached_result
         
         try:
-            total_steps = 6
+            total_steps = 5
             current_step = 0
             
             # Step 1: Analyze documentation for product vision
@@ -373,17 +372,7 @@ class SingularProductVisionAnalyzer(BaseAnalyzer):
             development_focus = self._analyze_development_focus(token)
             current_step += 1
             
-            # Step 5: Analyze configuration consistency
-            if progress_callback:
-                progress_callback(current_step, total_steps, "Analyzing configuration consistency...")
-            
-            if token:
-                token.check_cancellation()
-            
-            config_analysis = self._analyze_configuration_consistency(token)
-            current_step += 1
-            
-            # Step 6: Calculate product vision score
+            # Step 5: Calculate product vision score
             if progress_callback:
                 progress_callback(current_step, total_steps, "Calculating product vision coherence...")
             
@@ -391,7 +380,7 @@ class SingularProductVisionAnalyzer(BaseAnalyzer):
                 token.check_cancellation()
             
             vision_score = self._calculate_vision_coherence_score(
-                vision_docs, feature_analysis, api_consistency, development_focus, config_analysis
+                vision_docs, feature_analysis, api_consistency, development_focus
             )
             current_step += 1
             
@@ -403,7 +392,6 @@ class SingularProductVisionAnalyzer(BaseAnalyzer):
                 "feature_architecture": feature_analysis,
                 "api_consistency": api_consistency,
                 "development_focus": development_focus,
-                "configuration_consistency": config_analysis,
                 "vision_coherence_score": vision_score,
                 "total_features_identified": len(feature_analysis.get("features", [])),
                 "documentation_coverage": len(vision_docs.get("vision_statements", []))
@@ -657,48 +645,8 @@ class SingularProductVisionAnalyzer(BaseAnalyzer):
         
         return focus_analysis
     
-    def _analyze_configuration_consistency(self, token=None) -> Dict[str, Any]:
-        """Analyze configuration files for consistency"""
-        config_analysis = {
-            "config_files": [],
-            "environment_consistency": {},
-            "naming_consistency": 0.0,
-            "structure_consistency": 0.0
-        }
-        
-        # Configuration file patterns
-        config_patterns = [
-            "**/package.json", "**/requirements.txt", "**/Gemfile",
-            "**/pom.xml", "**/build.gradle", "**/Cargo.toml",
-            "**/*.env", "**/.env*", "**/config.*",
-            "**/settings.*", "**/configuration.*"
-        ]
-        
-        config_files = []
-        for pattern in config_patterns:
-            if token:
-                token.check_cancellation()
-            config_files.extend(self.find_files_by_pattern(pattern))
-        
-        config_data = []
-        for i, config_file in enumerate(config_files):
-            if token and i % 5 == 0:
-                token.check_cancellation()
-            
-            content = self.read_file_content(config_file)
-            if content:
-                config_data.append({
-                    "file": str(config_file.relative_to(self.repo_path)),
-                    "size": len(content),
-                    "type": config_file.suffix
-                })
-        
-        config_analysis["config_files"] = config_data
-        
-        return config_analysis
-    
     def _calculate_vision_coherence_score(self, vision_docs, feature_analysis, 
-                                        api_consistency, development_focus, config_analysis) -> Dict[str, float]:
+                                        api_consistency, development_focus) -> Dict[str, float]:
         """Calculate an overall product vision coherence score"""
         scores = {
             "documentation_score": 0.0,
@@ -1049,7 +997,7 @@ class SingularProductVisionAnalyzer(BaseAnalyzer):
             st.info("No commit history available for development focus analysis")
         
         # API consistency analysis
-        st.subheader("API Consistency Analysis")
+        st.subheader("🔌 API Consistency Analysis")
         
         api_analysis = analysis["api_consistency"]
         
@@ -1080,33 +1028,6 @@ class SingularProductVisionAnalyzer(BaseAnalyzer):
                     st.write(f"... and {len(api_analysis['endpoints']) - 20} more endpoints")
         else:
             st.info("No API endpoints detected in the codebase")
-        
-        # Configuration consistency
-        st.subheader("⚙️ Configuration Analysis")
-        
-        config_analysis = analysis["configuration_consistency"]
-        
-        if config_analysis.get("config_files"):
-            config_df = pd.DataFrame(config_analysis["config_files"])
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.write("**Configuration Files Found:**")
-                st.dataframe(config_df, use_container_width=True)
-            
-            with col2:
-                # Configuration file types
-                type_counts = config_df["type"].value_counts()
-                fig_config_types = px.pie(
-                    values=type_counts.values,
-                    names=type_counts.index,
-                    title="Configuration File Types"
-                )
-                st.plotly_chart(fig_config_types, use_container_width=True)
-        else:
-            st.info("No configuration files detected")
-        
         
         # Add save options
         self.add_save_options("singular_product_vision", analysis)
