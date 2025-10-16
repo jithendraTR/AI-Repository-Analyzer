@@ -723,7 +723,9 @@ def main():
             # Dev Assistance button
             if st.button("🤖 Dev Assistant", type="secondary", help="Get AI-powered development assistance", key="dev_assistance_button"):
                 if st.session_state.get('actual_repo_path'):
+                    # Ensure only one dialog is open at a time
                     st.session_state.show_dev_assistance_popup = True
+                    st.session_state.show_summary_popup = False
                 else:
                     st.error("Please load a repository first!")
         
@@ -731,12 +733,14 @@ def main():
             # Summary button
             if st.button("📋 Summary", type="secondary", help="Show comprehensive project analysis", key="summary_button"):
                 if st.session_state.get('actual_repo_path'):
+                    # Ensure only one dialog is open at a time
                     st.session_state.show_summary_popup = True
+                    st.session_state.show_dev_assistance_popup = False
                 else:
                     st.error("Please load a repository first!")
 
-    # Handle summary popup display using st.dialog as context manager
-    if st.session_state.get('show_summary_popup', False):
+    # Handle dialogs - ensure only one dialog is displayed at a time
+    if st.session_state.get('show_summary_popup', False) and not st.session_state.get('show_dev_assistance_popup', False):
         @st.dialog("📋 Comprehensive Project Summary")
         def show_summary_dialog():
             actual_repo_path = st.session_state.get('actual_repo_path', '')
@@ -784,7 +788,7 @@ def main():
         show_summary_dialog()
 
     # Handle dev assistance popup display using st.dialog as context manager
-    if st.session_state.get('show_dev_assistance_popup', False):
+    elif st.session_state.get('show_dev_assistance_popup', False) and not st.session_state.get('show_summary_popup', False):
         @st.dialog("🤖 Development Setup Assistant")
         def show_dev_assistance_dialog():
             actual_repo_path = st.session_state.get('actual_repo_path', '')
