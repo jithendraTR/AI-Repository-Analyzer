@@ -427,126 +427,17 @@ class AIContextAnalyzer(BaseAnalyzer):
         
         extension_points = []
         
-        # Common extension patterns
-        patterns = {
-            "abstract_classes": r"class\s+(\w+)\s*\([^)]*ABC[^)]*\):",
-            "interfaces": r"class\s+(\w+)\s*\([^)]*Interface[^)]*\):",
-            "base_classes": r"class\s+(\w+Base\w*):",
-            "factory_methods": r"def\s+(create_\w+|make_\w+|build_\w+)",
-            "plugin_systems": r"(plugin|extension|addon|module).*register",
-            "hooks": r"(hook|callback|handler).*register",
-            "decorators": r"@(\w+)\s*\n\s*def",
-            "strategy_pattern": r"class\s+(\w+Strategy):",
-            "observer_pattern": r"(subscribe|observe|listen|notify)",
-            "template_methods": r"def\s+(\w*template\w*|process_\w+)"
-        }
-        
-        code_files = self.get_file_list(['.py', '.js', '.ts', '.java', '.cpp', '.cs'])
-        
-        for file_path in code_files[:50]:  # Limit for performance
-            content = self.read_file_content(file_path)
-            if not content:
-                continue
-            
-            relative_path = str(file_path.relative_to(self.repo_path))
-            
-            for pattern_name, pattern in patterns.items():
-                matches = re.finditer(pattern, content, re.MULTILINE | re.IGNORECASE)
-                
-                for match in matches:
-                    line_num = content[:match.start()].count('\n') + 1
-                    context = self._extract_context(content, match.start(), match.end())
-                    
-                    extension_points.append({
-                        "type": pattern_name,
-                        "name": match.group(1) if match.groups() else match.group(0),
-                        "file": relative_path,
-                        "line": line_num,
-                        "context": context,
-                        "extensibility_score": self._calculate_extensibility_score(pattern_name, context)
-                    })
-        
-        # Sort by extensibility score
-        extension_points.sort(key=lambda x: x["extensibility_score"], reverse=True)
+        # Extension patterns removed as requested
+        # Return empty list
         
         return extension_points
     
     def _analyze_architectural_patterns(self) -> Dict[str, Any]:
         """Analyze architectural patterns in the codebase"""
         
-        patterns = {
-            "mvc": {"score": 0, "indicators": []},
-            "mvp": {"score": 0, "indicators": []},
-            "mvvm": {"score": 0, "indicators": []},
-            "layered": {"score": 0, "indicators": []},
-            "microservices": {"score": 0, "indicators": []},
-            "event_driven": {"score": 0, "indicators": []},
-            "repository": {"score": 0, "indicators": []},
-            "service_layer": {"score": 0, "indicators": []},
-            "dependency_injection": {"score": 0, "indicators": []}
-        }
-        
-        # Pattern indicators
-        pattern_indicators = {
-            "mvc": [
-                r"(model|view|controller)",
-                r"class\s+\w*(Model|View|Controller)",
-                r"(models|views|controllers)/"
-            ],
-            "mvp": [
-                r"(presenter|view)",
-                r"class\s+\w*(Presenter|View)",
-                r"(presenters|views)/"
-            ],
-            "mvvm": [
-                r"(viewmodel|view|model)",
-                r"class\s+\w*(ViewModel|View|Model)",
-                r"(viewmodels|views|models)/"
-            ],
-            "layered": [
-                r"(service|repository|controller|domain)",
-                r"(services|repositories|controllers|domain)/"
-            ],
-            "microservices": [
-                r"(service|microservice|api)",
-                r"docker",
-                r"kubernetes",
-                r"(services|microservices)/"
-            ],
-            "event_driven": [
-                r"(event|message|queue|pub|sub)",
-                r"(events|messages|queues)/"
-            ],
-            "repository": [
-                r"class\s+\w*Repository",
-                r"(repositories|repos)/"
-            ],
-            "service_layer": [
-                r"class\s+\w*Service",
-                r"(services|service)/"
-            ],
-            "dependency_injection": [
-                r"(inject|dependency|container)",
-                r"@inject",
-                r"(di|ioc)/"
-            ]
-        }
-        
-        # Search for pattern indicators
-        all_files = self.get_file_list()
-        all_content = ""
-        
-        for file_path in all_files[:100]:  # Limit for performance
-            content = self.read_file_content(file_path)
-            if content:
-                all_content += f"\n{file_path}\n{content}"
-        
-        for pattern_name, indicators in pattern_indicators.items():
-            for indicator in indicators:
-                matches = re.findall(indicator, all_content, re.IGNORECASE)
-                patterns[pattern_name]["score"] += len(matches)
-                if matches:
-                    patterns[pattern_name]["indicators"].extend(matches[:5])  # Limit examples
+        # Architecture patterns removed as requested
+        # Return empty patterns
+        patterns = {}
         
         return patterns
     
@@ -829,9 +720,6 @@ class AIContextAnalyzer(BaseAnalyzer):
     
     def render(self):
         """Render the AI context analysis"""
-        st.header("🤖 AI Context for New Features")
-        st.markdown("AI-powered insights on where and how to add new functionality")
-        
         # Add rerun button
         self.add_rerun_button("ai_context")
         
@@ -876,58 +764,9 @@ class AIContextAnalyzer(BaseAnalyzer):
                 )
                 st.plotly_chart(fig_types, use_container_width=True)
         
-        # Extension Points
-        st.subheader("🔌 Extension Points")
-        
-        extension_points = analysis["extension_points"]
-        if extension_points:
-            ext_df = pd.DataFrame([
-                {
-                    "Type": ep["type"],
-                    "Name": ep["name"],
-                    "File": ep["file"],
-                    "Line": ep["line"],
-                    "Extensibility Score": ep["extensibility_score"]
-                }
-                for ep in extension_points[:15]
-            ])
-            
-            st.dataframe(ext_df, use_container_width=True)
-            
-            # Extension points by type
-            type_counts = Counter(ep["type"] for ep in extension_points)
-            if type_counts:
-                fig_ext_types = px.bar(
-                    x=list(type_counts.keys()),
-                    y=list(type_counts.values()),
-                    title="Extension Points by Type"
-                )
-                st.plotly_chart(fig_ext_types, use_container_width=True)
-        else:
-            st.info("No extension points found")
-        
-        # Architectural Patterns
-        st.subheader("🏗️ Architectural Patterns")
-        
-        arch_patterns = analysis["architectural_patterns"]
-        pattern_scores = {k: v["score"] for k, v in arch_patterns.items() if v["score"] > 0}
-        
-        if pattern_scores:
-            fig_patterns = px.bar(
-                x=list(pattern_scores.keys()),
-                y=list(pattern_scores.values()),
-                title="Architectural Pattern Indicators"
-            )
-            st.plotly_chart(fig_patterns, use_container_width=True)
-            
-            # Show dominant pattern details
-            dominant = max(pattern_scores.items(), key=lambda x: x[1])
-            st.info(f"**Dominant Pattern:** {dominant[0].upper()} (Score: {dominant[1]})")
-        else:
-            st.info("No clear architectural patterns detected")
         
         # Similar Implementations
-        st.subheader("📋 Similar Implementation Templates")
+        st.subheader("� Similar Implementation Templates")
         st.info("No similar implementations found - feature optimized for performance")
         
         # Module Dependencies
@@ -969,7 +808,7 @@ class AIContextAnalyzer(BaseAnalyzer):
             st.info("No dependency information found")
         
         # AI Recommendations
-        st.subheader("💡 AI Recommendations")
+        st.subheader("� AI Recommendations")
         
         recommendations = analysis["recommendations"]
         if recommendations:
@@ -992,52 +831,6 @@ class AIContextAnalyzer(BaseAnalyzer):
         else:
             st.info("No specific recommendations generated")
         
-        # AI-powered feature placement suggestions
-        st.subheader("🎯 AI Feature Placement Assistant")
-        
-        feature_description = st.text_area(
-            "Describe the new feature you want to add:",
-            placeholder="e.g., Add user authentication, Implement caching layer, Create API endpoint for orders"
-        )
-        
-        if st.button("Get AI Placement Suggestions") and feature_description:
-            with self.display_loading_message("Analyzing feature placement..."):
-                # Prepare context for AI
-                # Prepare context for AI with safe access
-                similar_impls = analysis.get("similar_implementations", [])
-                context_summary = {
-                    "architectural_patterns": pattern_scores,
-                    "extension_points": [ep.get("type", "Unknown") for ep in extension_points[:5] if isinstance(ep, dict)],
-                    "directory_structure": list(code_structure.get("directories", {}).keys())[:10],
-                    "similar_implementations": [
-                        impl.get("dominant_pattern", "Unknown") 
-                        for impl in (similar_impls[:5] if similar_impls and isinstance(similar_impls, list) else [])
-                        if impl and isinstance(impl, dict)
-                    ]
-                }
-                
-                prompt = f"""
-                Based on this codebase analysis:
-                
-                Architecture: {context_summary}
-                
-                Feature to implement: {feature_description}
-                
-                Please provide specific recommendations for:
-                1. Which directory/module to place the new feature
-                2. Which existing patterns or extension points to leverage
-                3. What files might need modification
-                4. Potential integration challenges
-                5. Best practices to follow based on the existing codebase
-                """
-                
-                suggestions = self.ai_client.query(prompt)
-                
-                if suggestions:
-                    st.markdown("**AI-Generated Placement Suggestions:**")
-                    st.markdown(suggestions)
-                else:
-                    st.error("Failed to generate placement suggestions")
         
         # Add save options
         self.add_save_options("ai_context", analysis)

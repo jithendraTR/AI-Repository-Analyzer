@@ -12,7 +12,7 @@ from pathlib import Path
 import subprocess
 import json
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import threading
 import time
 from utils.ai_client import OpenArenaClient
@@ -102,6 +102,42 @@ class BaseAnalyzer(ABC):
         """Render the analysis results in Streamlit - must be implemented by subclasses"""
         pass
     
+    def render_with_header(self, analysis_type: str, title: str, description: str = None):
+        """
+        Render analysis with a single header - use this in subclass render methods
+        
+        Args:
+            analysis_type: Type of analysis for caching/controls
+            title: Display title for the analysis
+            description: Optional description text
+        """
+        # Display header only once
+        st.header(f"🔍 {title}")
+        if description:
+            st.markdown(description)
+        st.markdown("---")
+        
+        # Add rerun button
+        self.add_rerun_button(analysis_type)
+        
+        # Display any parallel AI insights first
+        insights_displayed = self.display_parallel_ai_insights(analysis_type)
+        if insights_displayed:
+            st.markdown("---")
+    
+    def render_analysis_section(self, analysis_type: str, loading_message: str):
+        """
+        Render analysis section without header - use this for the main analysis content
+        
+        Args:
+            analysis_type: Type of analysis
+            loading_message: Message to show while loading
+            
+        Returns:
+            Analysis results or None if analysis should not run
+        """
+        return self.get_analysis_with_control(analysis_type, loading_message)
+
     def get_file_list(self, extensions: List[str] = None) -> List[Path]:
         """
         Get list of files in the repository
@@ -155,16 +191,35 @@ class BaseAnalyzer(ABC):
     
     def get_git_history(self, file_path: str = None, max_commits: int = 100) -> List[Dict]:
         """
-        Get git commit history
+        Get git commit history with time frame filtering applied
         
         Args:
             file_path: Specific file to get history for (optional)
             max_commits: Maximum number of commits to retrieve
             
         Returns:
-            List of commit information dictionaries
+            List of commit information dictionaries filtered by time frame
         """
         if not self.repo:
+            # Check if we should show an error for no commits
+            error_info = self.check_commit_filter_error()
+            if not error_info:
+                # Set error for no git repository
+                selected_time_frame = st.session_state.get('selected_time_frame', 'all')
+                if selected_time_frame != 'all':
+                    time_frame_display = {
+                        '1_year': 'last 1 year',
+                        '2_years': 'last 2 years',
+                        '3_years': 'last 3 years', 
+                        '5_years': 'last 5 years'
+                    }.get(selected_time_frame, selected_time_frame)
+                    
+                    st.session_state['commit_filter_error'] = {
+                        'message': f"No git repository found. Unable to analyze commits for the {time_frame_display}.",
+                        'total_commits': 0,
+                        'selected_period': time_frame_display,
+                        'has_commits': False
+                    }
             return []
         
         try:
@@ -181,11 +236,151 @@ class BaseAnalyzer(ABC):
                     'files_changed': len(commit.stats.files)
                 })
             
-            return commits
+            # Apply time frame filtering
+            return self.filter_commits_by_time_frame(commits)
         except Exception as e:
             # Completely suppress git history warnings for cloned repositories
             # Only log if it's a local repository that should have working git
             return []
+    
+    def filter_commits_by_time_frame(self, commits: List[Dict]) -> List[Dict]:
+        """
+        Filter commits based on selected time frame from session state with timezone-aware handling
+        
+        Args:
+            commits: List of commit dictionaries with 'date' field
+            
+        Returns:
+            Filtered list of commits
+        """
+        # Get selected time frame from session state
+        selected_time_frame = st.session_state.get('selected_time_frame', 'all')
+        
+        # If 'all' is selected, return all commits
+        if selected_time_frame == 'all':
+            # Clear any previous error when showing all commits
+            if 'commit_filter_error' in st.session_state:
+                del st.session_state['commit_filter_error']
+            return commits
+        
+        # Calculate cutoff date based on selection using UTC for consistency
+        from datetime import timezone
+        now_utc = datetime.now(timezone.utc)
+        cutoff_date_utc = None
+        
+        if selected_time_frame == '1_year':
+            cutoff_date_utc = now_utc - timedelta(days=365)
+        elif selected_time_frame == '2_years':
+            cutoff_date_utc = now_utc - timedelta(days=2*365)
+        elif selected_time_frame == '3_years':
+            cutoff_date_utc = now_utc - timedelta(days=3*365)
+        elif selected_time_frame == '5_years':
+            cutoff_date_utc = now_utc - timedelta(days=5*365)
+        else:
+            # Default to all commits if unknown selection
+            if 'commit_filter_error' in st.session_state:
+                del st.session_state['commit_filter_error']
+            return commits
+        
+        # Filter commits based on cutoff date with proper timezone handling
+        filtered_commits = []
+        for commit in commits:
+            commit_date = commit.get('date')
+            if commit_date:
+                try:
+                    # Normalize commit date to UTC for consistent comparison
+                    if hasattr(commit_date, 'tzinfo'):
+                        if commit_date.tzinfo is not None:
+                            # Convert timezone-aware datetime to UTC
+                            commit_date_utc = commit_date.astimezone(timezone.utc)
+                        else:
+                            # Treat naive datetime as UTC (common for Git commits)
+                            commit_date_utc = commit_date.replace(tzinfo=timezone.utc)
+                    else:
+                        # Handle other datetime formats by converting to string then parsing
+                        if isinstance(commit_date, str):
+                            try:
+                                parsed_date = pd.to_datetime(commit_date)
+                                if parsed_date.tzinfo is not None:
+                                    commit_date_utc = parsed_date.astimezone(timezone.utc)
+                                else:
+                                    commit_date_utc = parsed_date.replace(tzinfo=timezone.utc)
+                            except:
+                                # If parsing fails, skip this commit from filtering
+                                filtered_commits.append(commit)
+                                continue
+                        else:
+                            # If not a recognizable date format, include the commit
+                            filtered_commits.append(commit)
+                            continue
+                    
+                    # Compare UTC-normalized dates
+                    if commit_date_utc >= cutoff_date_utc:
+                        filtered_commits.append(commit)
+                        
+                except Exception as e:
+                    # On any timezone conversion error, include the commit to avoid breaking
+                    # This ensures backwards compatibility
+                    filtered_commits.append(commit)
+                    continue
+            else:
+                # If no date field, include the commit to maintain existing behavior
+                filtered_commits.append(commit)
+        
+        # Check if filtering resulted in empty commits and provide appropriate error handling
+        if not filtered_commits and commits and selected_time_frame != 'all':
+            # Store error information in session state for analyzers to check
+            time_frame_display = {
+                '1_year': 'last 1 year',
+                '2_years': 'last 2 years', 
+                '3_years': 'last 3 years',
+                '5_years': 'last 5 years'
+            }.get(selected_time_frame, selected_time_frame)
+            
+            st.session_state['commit_filter_error'] = {
+                'message': f"No commits found for the {time_frame_display}. The repository has {len(commits)} total commits, but none fall within the selected time period.",
+                'total_commits': len(commits),
+                'selected_period': time_frame_display,
+                'has_commits': len(commits) > 0
+            }
+        else:
+            # Clear any previous error when commits are found
+            if 'commit_filter_error' in st.session_state:
+                del st.session_state['commit_filter_error']
+        
+        return filtered_commits
+    
+    def check_commit_filter_error(self) -> Dict[str, Any]:
+        """
+        Check if there's a commit filtering error and return error details
+        
+        Returns:
+            Dictionary with error details or empty dict if no error
+        """
+        return st.session_state.get('commit_filter_error', {})
+    
+    def display_commit_filter_error(self) -> bool:
+        """
+        Display commit filter error if present
+        
+        Returns:
+            True if error was displayed, False otherwise
+        """
+        error_info = self.check_commit_filter_error()
+        if error_info:
+            st.error(f"⚠️ {error_info['message']}")
+            
+            # Show helpful suggestions
+            if error_info['has_commits']:
+                st.info("💡 **Suggestions:**\n"
+                       "- Try selecting 'All commits' to see the full repository history\n"
+                       "- Choose a longer time period if the repository is older\n"
+                       "- The repository may have been inactive during the selected period")
+            else:
+                st.warning("This repository has no commit history available.")
+            
+            return True
+        return False
     
     def get_file_contributors(self, file_path: str) -> Dict[str, int]:
         """
@@ -442,21 +637,15 @@ class BaseAnalyzer(ABC):
     
     def add_rerun_button(self, analysis_type: str):
         """
-        Add a rerun button that clears cache and reruns analysis
+        Previously added a rerun button, now removed as per requirements
+        while maintaining functionality for cache clearing
         
         Args:
             analysis_type: Type of analysis to rerun
         """
-        col1, col2 = st.columns([3, 1])
-        with col2:
-            # Only show rerun button if analysis is not currently running
-            analysis_running = st.session_state.get('analysis_running', False)
-            if not analysis_running:
-                if st.button("🔄 Rerun Analysis", key=f"rerun_{analysis_type}"):
-                    # Only rerun if we're not in the middle of a selection change
-                    if not st.session_state.get('selection_changing', False):
-                        self.clear_cache(analysis_type)
-                        st.rerun()
+        # Button removed but maintaining the functionality for cache management
+        # This method is kept to maintain compatibility with existing code
+        pass
     
     def get_analysis_with_control(self, analysis_type: str, loading_message: str):
         """
@@ -530,7 +719,7 @@ class BaseAnalyzer(ABC):
             if result_key in results:
                 result = results[result_key]
                 
-                st.subheader("🤖 AI Insights (From Parallel Analysis)")
+                st.subheader("🤖 AI Insights")
                 
                 if result.get('success', False) and result.get('insight'):
                     st.markdown("**AI-Generated Insights:**")
@@ -571,42 +760,9 @@ class BaseAnalyzer(ABC):
         """
         st.subheader("💾 Save & Export Options")
         
-        col1, col2, col3, col4, col5 = st.columns(5)
+        col1, col2 = st.columns(2)
         
         with col1:
-            # Save as JSON
-            if st.button("📄 Save as JSON", key=f"save_json_{analysis_type}"):
-                json_data = self._prepare_json_export(analysis_type, analysis_data)
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"{analysis_type}_report_{timestamp}.json"
-                
-                st.download_button(
-                    label="⬇️ Download JSON Report",
-                    data=json.dumps(json_data, indent=2, default=str),
-                    file_name=filename,
-                    mime="application/json",
-                    key=f"download_json_{analysis_type}"
-                )
-        
-        with col2:
-            # Save as CSV (for tabular data)
-            if st.button("📊 Save as CSV", key=f"save_csv_{analysis_type}"):
-                csv_data = self._prepare_csv_export(analysis_type, analysis_data)
-                if csv_data:
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    filename = f"{analysis_type}_report_{timestamp}.csv"
-                    
-                    st.download_button(
-                        label="⬇️ Download CSV Report",
-                        data=csv_data,
-                        file_name=filename,
-                        mime="text/csv",
-                        key=f"download_csv_{analysis_type}"
-                    )
-                else:
-                    st.warning("No tabular data available for CSV export")
-        
-        with col3:
             # Save as PDF
             pdf_key = f"pdf_prepared_{analysis_type}"
             
@@ -637,7 +793,7 @@ class BaseAnalyzer(ABC):
                     on_click=lambda: st.session_state.pop(pdf_key, None)
                 )
         
-        with col4:
+        with col2:
             # Save as DOCX
             docx_key = f"docx_prepared_{analysis_type}"
             
@@ -667,209 +823,7 @@ class BaseAnalyzer(ABC):
                     key=f"download_docx_{analysis_type}",
                     on_click=lambda: st.session_state.pop(docx_key, None)
                 )
-        
-        with col5:
-            # Save comprehensive report
-            if st.button("📋 Save Full Report", key=f"save_full_{analysis_type}"):
-                report_data = self._prepare_full_report(analysis_type, analysis_data)
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"{analysis_type}_full_report_{timestamp}.md"
-                
-                st.download_button(
-                    label="⬇️ Download Full Report",
-                    data=report_data,
-                    file_name=filename,
-                    mime="text/markdown",
-                    key=f"download_full_{analysis_type}"
-                )
     
-    def _prepare_json_export(self, analysis_type: str, analysis_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Prepare data for JSON export"""
-        export_data = {
-            "report_metadata": {
-                "analysis_type": analysis_type,
-                "repository_path": str(self.repo_path),
-                "generated_at": datetime.now().isoformat(),
-                "analyzer_version": "1.0.0"
-            },
-            "analysis_results": analysis_data
-        }
-        
-        # Add AI insights if available
-        if 'parallel_ai_results' in st.session_state:
-            type_mapping = {
-                'expertise_mapping': 'expertise',
-                'timeline_analysis': 'timeline',
-                'api_contracts': 'api_contracts',
-                'ai_context': 'ai_context',
-                'risk_analysis': 'risk_analysis',
-                'development_patterns': 'development_patterns',
-                'version_governance': 'version_governance',
-                'tech_debt_detection': 'tech_debt',
-                'design_patterns': 'design_patterns'
-            }
-            
-            result_key = type_mapping.get(analysis_type, analysis_type)
-            results = st.session_state.parallel_ai_results
-            
-            if result_key in results and results[result_key].get('success', False):
-                export_data["ai_insights"] = results[result_key].get('insight', '')
-        
-        return export_data
-    
-    def _prepare_csv_export(self, analysis_type: str, analysis_data: Dict[str, Any]) -> Optional[str]:
-        """Prepare data for CSV export"""
-        try:
-            # Convert analysis data to DataFrame based on analysis type
-            df = None
-            
-            if analysis_type == "expertise_mapping":
-                if "file_expertise" in analysis_data:
-                    rows = []
-                    for file_path, experts in analysis_data["file_expertise"].items():
-                        for expert, commits in experts.items():
-                            rows.append({
-                                "file_path": file_path,
-                                "expert": expert,
-                                "commits": commits
-                            })
-                    df = pd.DataFrame(rows)
-            
-            elif analysis_type == "timeline_analysis":
-                if "timeline_data" in analysis_data and "monthly_commits" in analysis_data["timeline_data"]:
-                    monthly_data = analysis_data["timeline_data"]["monthly_commits"]
-                    df = pd.DataFrame([
-                        {"month": month, "commits": commits}
-                        for month, commits in monthly_data.items()
-                    ])
-            
-            elif analysis_type == "risk_analysis":
-                if "test_coverage" in analysis_data:
-                    coverage_data = analysis_data["test_coverage"]
-                    rows = []
-                    for file_path, coverage in coverage_data.items():
-                        rows.append({
-                            "file_path": file_path,
-                            "has_tests": coverage.get("has_tests", False),
-                            "test_files": len(coverage.get("test_files", []))
-                        })
-                    df = pd.DataFrame(rows)
-            
-            # Add more analysis types as needed
-            
-            if df is not None and not df.empty:
-                return df.to_csv(index=False)
-            
-            return None
-            
-        except Exception as e:
-            st.warning(f"Could not prepare CSV export: {str(e)}")
-            return None
-    
-    def _prepare_full_report(self, analysis_type: str, analysis_data: Dict[str, Any]) -> str:
-        """Prepare comprehensive markdown report"""
-        report_lines = []
-        
-        # Header
-        report_lines.append(f"# {analysis_type.replace('_', ' ').title()} Report")
-        report_lines.append("")
-        report_lines.append(f"**Repository:** {self.repo_path}")
-        report_lines.append(f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        report_lines.append(f"**Analysis Type:** {analysis_type}")
-        report_lines.append("")
-        
-        # Executive Summary
-        report_lines.append("## Executive Summary")
-        report_lines.append("")
-        
-        # Add AI insights if available
-        if 'parallel_ai_results' in st.session_state:
-            type_mapping = {
-                'expertise_mapping': 'expertise',
-                'timeline_analysis': 'timeline',
-                'api_contracts': 'api_contracts',
-                'ai_context': 'ai_context',
-                'risk_analysis': 'risk_analysis',
-                'development_patterns': 'development_patterns',
-                'version_governance': 'version_governance',
-                'tech_debt_detection': 'tech_debt',
-                'design_patterns': 'design_patterns'
-            }
-            
-            result_key = type_mapping.get(analysis_type, analysis_type)
-            results = st.session_state.parallel_ai_results
-            
-            if result_key in results and results[result_key].get('success', False):
-                report_lines.append("### AI-Generated Insights")
-                report_lines.append("")
-                report_lines.append(results[result_key].get('insight', ''))
-                report_lines.append("")
-        
-        # Detailed Analysis Results
-        report_lines.append("## Detailed Analysis Results")
-        report_lines.append("")
-        
-        # Convert analysis data to markdown
-        self._add_analysis_to_markdown(report_lines, analysis_data)
-        
-        # Footer
-        report_lines.append("")
-        report_lines.append("---")
-        report_lines.append("*Report generated by AI-Powered Codebase Analyzer*")
-        
-        return "\n".join(report_lines)
-    
-    def _add_analysis_to_markdown(self, report_lines: List[str], data: Any, level: int = 3):
-        """Recursively add analysis data to markdown report"""
-        if isinstance(data, dict):
-            for key, value in data.items():
-                if key in ['error']:  # Skip error keys
-                    continue
-                    
-                header = "#" * level + f" {key.replace('_', ' ').title()}"
-                report_lines.append(header)
-                report_lines.append("")
-                
-                if isinstance(value, (dict, list)):
-                    self._add_analysis_to_markdown(report_lines, value, level + 1)
-                else:
-                    report_lines.append(f"{value}")
-                    report_lines.append("")
-        
-        elif isinstance(data, list):
-            if data and isinstance(data[0], dict):
-                # Create a table for list of dictionaries
-                if len(data) > 0:
-                    headers = list(data[0].keys())
-                    report_lines.append("| " + " | ".join(headers) + " |")
-                    report_lines.append("| " + " | ".join(["---"] * len(headers)) + " |")
-                    
-                    for item in data[:20]:  # Limit to first 20 items
-                        row = []
-                        for header in headers:
-                            value = str(item.get(header, ""))
-                            # Escape pipe characters
-                            value = value.replace("|", "\\|")
-                            row.append(value)
-                        report_lines.append("| " + " | ".join(row) + " |")
-                    
-                    if len(data) > 20:
-                        report_lines.append(f"*... and {len(data) - 20} more items*")
-                    
-                    report_lines.append("")
-            else:
-                # Simple list
-                for item in data[:50]:  # Limit to first 50 items
-                    report_lines.append(f"- {item}")
-                
-                if len(data) > 50:
-                    report_lines.append(f"*... and {len(data) - 50} more items*")
-                
-                report_lines.append("")
-        
-        else:
-            report_lines.append(f"{data}")
-            report_lines.append("")
     
     def _generate_single_analyzer_pdf(self, analysis_type: str, analysis_data: Dict[str, Any]) -> bytes:
         """Generate a PDF report for a single analyzer"""

@@ -87,6 +87,12 @@ class TechDebtDetectionAnalyzer(BaseAnalyzer):
             # Skip expensive operations for speed
             deprecated_code = self._analyze_deprecated_code_ultra_fast(token)
             
+            # Add new enhanced features
+            if progress_callback:
+                progress_callback(current_step, total_steps, "Detecting framework inconsistencies...")
+            
+            framework_inconsistencies = self._analyze_framework_inconsistencies(token)
+            
             result = {
                 "code_smells": code_smells,
                 "complexity_metrics": complexity_metrics,
@@ -95,6 +101,7 @@ class TechDebtDetectionAnalyzer(BaseAnalyzer):
                 "duplication_analysis": {"duplicate_blocks": [], "duplication_score": 0},  # Skip for speed
                 "architectural_debt": {"circular_dependencies": [], "god_classes": []},  # Skip for speed
                 "performance_issues": {"performance_antipatterns": []},  # Skip for speed
+                "framework_inconsistencies": framework_inconsistencies,  # New feature
                 "debt_summary": self._generate_debt_summary_ultra_fast(
                     code_smells, complexity_metrics, todo_analysis, deprecated_code
                 )
@@ -109,54 +116,276 @@ class TechDebtDetectionAnalyzer(BaseAnalyzer):
             return {"error": f"Analysis failed: {str(e)}"}
     
     def _analyze_code_smells_ultra_fast(self, token=None) -> Dict[str, Any]:
-        """Ultra-fast code smells analysis with aggressive limits"""
+        """Enhanced code smells analysis with proper detection"""
         
         smells = {
             "long_methods": [],
             "large_classes": [],
             "magic_numbers": [],
+            "nested_complexity": [],
             "smell_counts": {}
         }
         
-        # Drastically limit file processing for speed
-        source_files = self.get_file_list(['.py', '.js', '.ts'])[:15]  # Only 15 files
+        # Limit file processing for speed but provide meaningful results
+        source_files = self.get_file_list(['.py', '.js', '.ts'])[:20]  # Slightly more files for better coverage
         
         for file_path in source_files:
             if token:
                 token.check_cancellation()
             
             content = self.read_file_content(file_path)
-            if not content or len(content) > 50000:  # Skip very large files
+            if not content or len(content) > 100000:  # Skip extremely large files
                 continue
             
             relative_path = str(file_path.relative_to(self.repo_path))
+            lines = content.split('\n')
             
-            # Quick method length check using pre-compiled regex
-            function_matches = self._COMPLEXITY_PATTERNS['functions'].findall(content)
-            if len(function_matches) > 0:
-                # Rough estimate: if file has many functions and is long, likely has long methods
-                lines_count = len(content.split('\n'))
-                if lines_count > 200 and len(function_matches) < 5:
-                    smells["long_methods"].append({
-                        "file": relative_path,
-                        "method": "multiple_methods",
-                        "lines": lines_count // len(function_matches),
-                        "start_line": 1
-                    })
-                    smells["smell_counts"]["long_methods"] = smells["smell_counts"].get("long_methods", 0) + 1
+            # Detect long methods with proper analysis
+            self._detect_long_methods(content, relative_path, lines, smells)
             
-            # Quick magic numbers check
-            magic_matches = self._COMPLEXITY_PATTERNS['magic_numbers'].findall(content)
-            if len(magic_matches) > 5:
-                smells["magic_numbers"].extend([{
-                    "file": relative_path,
-                    "line": 1,
-                    "number": match,
-                    "context": "multiple_occurrences"
-                } for match in magic_matches[:3]])  # Only first 3
-                smells["smell_counts"]["magic_numbers"] = smells["smell_counts"].get("magic_numbers", 0) + len(magic_matches[:3])
+            # Detect large classes
+            self._detect_large_classes(content, relative_path, lines, smells)
+            
+            # Enhanced magic numbers detection
+            self._detect_magic_numbers(content, relative_path, lines, smells)
+            
+            # Detect nested complexity (deeply nested code)
+            self._detect_nested_complexity(content, relative_path, lines, smells)
         
         return smells
+    
+    def _detect_long_methods(self, content: str, file_path: str, lines: List[str], smells: Dict):
+        """Detect long methods with proper line counting"""
+        
+        if file_path.endswith('.py'):
+            # Python function detection
+            func_pattern = re.compile(r'^(\s*)def\s+(\w+)\s*\([^)]*\):', re.MULTILINE)
+            matches = list(func_pattern.finditer(content))
+            
+            for i, match in enumerate(matches):
+                func_name = match.group(2)
+                start_line = content[:match.start()].count('\n') + 1
+                indent_level = len(match.group(1))
+                
+                # Find end of function by looking for next function at same or lower indent level
+                end_line = len(lines)
+                for j in range(i + 1, len(matches)):
+                    next_indent = len(matches[j].group(1))
+                    if next_indent <= indent_level:
+                        end_line = content[:matches[j].start()].count('\n') + 1
+                        break
+                
+                method_lines = end_line - start_line
+                if method_lines > 50:  # Long method threshold
+                    smells["long_methods"].append({
+                        "file": file_path,
+                        "method": func_name,
+                        "lines": method_lines,
+                        "start_line": start_line,
+                        "severity": "high" if method_lines > 100 else "medium",
+                        "risk_score": min(method_lines * 2, 100)
+                    })
+                    smells["smell_counts"]["long_methods"] = smells["smell_counts"].get("long_methods", 0) + 1
+        
+        elif file_path.endswith(('.js', '.ts')):
+            # JavaScript/TypeScript function detection
+            func_patterns = [
+                re.compile(r'function\s+(\w+)\s*\([^)]*\)\s*\{', re.MULTILINE),
+                re.compile(r'(\w+)\s*:\s*function\s*\([^)]*\)\s*\{', re.MULTILINE),
+                re.compile(r'const\s+(\w+)\s*=\s*\([^)]*\)\s*=>\s*\{', re.MULTILINE)
+            ]
+            
+            for pattern in func_patterns:
+                matches = list(pattern.finditer(content))
+                for match in matches:
+                    func_name = match.group(1)
+                    start_pos = match.start()
+                    start_line = content[:start_pos].count('\n') + 1
+                    
+                    # Simple brace counting to find function end
+                    brace_count = 0
+                    pos = match.end() - 1  # Start from the opening brace
+                    end_pos = len(content)
+                    
+                    for i in range(pos, len(content)):
+                        if content[i] == '{':
+                            brace_count += 1
+                        elif content[i] == '}':
+                            brace_count -= 1
+                            if brace_count == 0:
+                                end_pos = i
+                                break
+                    
+                    end_line = content[:end_pos].count('\n') + 1
+                    method_lines = end_line - start_line
+                    
+                    if method_lines > 40:  # Long method threshold for JS
+                        smells["long_methods"].append({
+                            "file": file_path,
+                            "method": func_name,
+                            "lines": method_lines,
+                            "start_line": start_line,
+                            "severity": "high" if method_lines > 80 else "medium",
+                            "risk_score": min(method_lines * 2.5, 100)
+                        })
+                        smells["smell_counts"]["long_methods"] = smells["smell_counts"].get("long_methods", 0) + 1
+    
+    def _detect_large_classes(self, content: str, file_path: str, lines: List[str], smells: Dict):
+        """Detect large classes with method counting"""
+        
+        if file_path.endswith('.py'):
+            # Python class detection
+            class_pattern = re.compile(r'^(\s*)class\s+(\w+)', re.MULTILINE)
+            method_pattern = re.compile(r'^\s+def\s+(\w+)', re.MULTILINE)
+            
+            class_matches = list(class_pattern.finditer(content))
+            
+            for i, match in enumerate(class_matches):
+                class_name = match.group(2)
+                start_line = content[:match.start()].count('\n') + 1
+                indent_level = len(match.group(1))
+                
+                # Find end of class
+                end_pos = len(content)
+                for j in range(i + 1, len(class_matches)):
+                    next_indent = len(class_matches[j].group(1))
+                    if next_indent <= indent_level:
+                        end_pos = class_matches[j].start()
+                        break
+                
+                class_content = content[match.start():end_pos]
+                methods = method_pattern.findall(class_content)
+                method_count = len(methods)
+                class_lines = class_content.count('\n')
+                
+                if method_count > 15 or class_lines > 300:  # Large class thresholds
+                    smells["large_classes"].append({
+                        "file": file_path,
+                        "class": class_name,
+                        "methods": method_count,
+                        "lines": class_lines,
+                        "start_line": start_line,
+                        "severity": "high" if method_count > 25 or class_lines > 500 else "medium",
+                        "complexity_score": min((method_count * 3) + (class_lines // 10), 100)
+                    })
+                    smells["smell_counts"]["large_classes"] = smells["smell_counts"].get("large_classes", 0) + 1
+        
+        elif file_path.endswith(('.js', '.ts')):
+            # JavaScript/TypeScript class detection
+            class_pattern = re.compile(r'class\s+(\w+)', re.MULTILINE)
+            method_pattern = re.compile(r'^\s*(\w+)\s*\([^)]*\)\s*\{', re.MULTILINE)
+            
+            class_matches = list(class_pattern.finditer(content))
+            
+            for match in class_matches:
+                class_name = match.group(1)
+                start_line = content[:match.start()].count('\n') + 1
+                
+                # Simple approximation for class content (until next class or end)
+                next_class_pos = len(content)
+                for next_match in class_matches:
+                    if next_match.start() > match.start():
+                        next_class_pos = next_match.start()
+                        break
+                
+                class_content = content[match.start():next_class_pos]
+                methods = method_pattern.findall(class_content)
+                method_count = len(methods)
+                class_lines = class_content.count('\n')
+                
+                if method_count > 12 or class_lines > 250:
+                    smells["large_classes"].append({
+                        "file": file_path,
+                        "class": class_name,
+                        "methods": method_count,
+                        "lines": class_lines,
+                        "start_line": start_line,
+                        "severity": "high" if method_count > 20 or class_lines > 400 else "medium",
+                        "complexity_score": min((method_count * 4) + (class_lines // 8), 100)
+                    })
+                    smells["smell_counts"]["large_classes"] = smells["smell_counts"].get("large_classes", 0) + 1
+    
+    def _detect_magic_numbers(self, content: str, file_path: str, lines: List[str], smells: Dict):
+        """Enhanced magic numbers detection with context"""
+        
+        # Enhanced regex to avoid false positives
+        magic_pattern = re.compile(r'\b(?<![\w\.])[2-9]\d+(?:\.\d+)?(?![\w\.])', re.MULTILINE)
+        
+        for line_num, line in enumerate(lines, 1):
+            # Skip comments, strings, and common patterns
+            stripped = line.strip()
+            if (stripped.startswith('#') or stripped.startswith('//') or 
+                '"' in line or "'" in line or 
+                any(keyword in stripped.lower() for keyword in ['version', 'port', 'timeout', 'sleep'])):
+                continue
+            
+            matches = magic_pattern.finditer(line)
+            for match in matches:
+                number = match.group(0)
+                # Skip common non-magic numbers
+                if number in ['10', '100', '1000', '60', '24', '365', '2', '3', '4', '5']:
+                    continue
+                
+                context = line.strip()[:80]  # Context around the magic number
+                
+                smells["magic_numbers"].append({
+                    "file": file_path,
+                    "line": line_num,
+                    "number": number,
+                    "context": context,
+                    "severity": "medium",
+                    "suggestion": f"Consider extracting '{number}' as a named constant"
+                })
+                
+                if len(smells["magic_numbers"]) >= 15:  # Limit results
+                    break
+            
+            if len(smells["magic_numbers"]) >= 15:
+                break
+        
+        if smells["magic_numbers"]:
+            smells["smell_counts"]["magic_numbers"] = len(smells["magic_numbers"])
+    
+    def _detect_nested_complexity(self, content: str, file_path: str, lines: List[str], smells: Dict):
+        """Detect deeply nested code structures"""
+        
+        for line_num, line in enumerate(lines, 1):
+            # Count indentation/nesting level
+            if file_path.endswith('.py'):
+                # Python uses indentation
+                indent_level = (len(line) - len(line.lstrip())) // 4  # Assuming 4-space indentation
+                if indent_level > 4:  # More than 4 levels of nesting
+                    smells["nested_complexity"].append({
+                        "file": file_path,
+                        "line": line_num,
+                        "nesting_depth": indent_level,
+                        "content": line.strip()[:60],
+                        "severity": "high" if indent_level > 6 else "medium",
+                        "suggestion": "Consider extracting nested logic into separate methods"
+                    })
+                    
+            elif file_path.endswith(('.js', '.ts')):
+                # JavaScript/TypeScript uses braces
+                brace_level = line.count('{') - line.count('}')
+                if '{' in line and brace_level > 0:
+                    # Rough estimation of nesting depth
+                    leading_spaces = len(line) - len(line.lstrip())
+                    estimated_depth = leading_spaces // 2  # Rough estimate
+                    
+                    if estimated_depth > 4:
+                        smells["nested_complexity"].append({
+                            "file": file_path,
+                            "line": line_num,
+                            "nesting_depth": estimated_depth,
+                            "content": line.strip()[:60],
+                            "severity": "high" if estimated_depth > 6 else "medium",
+                            "suggestion": "Consider extracting nested logic into separate functions"
+                        })
+        
+        # Limit results and update counts
+        smells["nested_complexity"] = smells["nested_complexity"][:10]
+        if smells["nested_complexity"]:
+            smells["smell_counts"]["nested_complexity"] = len(smells["nested_complexity"])
     
     def _analyze_complexity_metrics_ultra_fast(self, token=None) -> Dict[str, Any]:
         """Ultra-fast complexity analysis using pre-compiled patterns"""
@@ -293,9 +522,275 @@ class TechDebtDetectionAnalyzer(BaseAnalyzer):
         
         return deprecated
     
+    def _analyze_framework_inconsistencies(self, token=None) -> Dict[str, Any]:
+        """Analyze framework and approach inconsistencies across the codebase"""
+        
+        inconsistencies = {
+            "http_clients": [],
+            "date_handling": [],
+            "logging": [],
+            "configuration": [],
+            "testing_frameworks": [],
+            "inconsistency_summary": {}
+        }
+        
+        # Patterns to detect different approaches for same functionality
+        framework_patterns = {
+            "http_clients": {
+                "requests": re.compile(r'import requests|from requests', re.IGNORECASE),
+                "urllib": re.compile(r'import urllib|from urllib', re.IGNORECASE),
+                "httpx": re.compile(r'import httpx|from httpx', re.IGNORECASE),
+                "aiohttp": re.compile(r'import aiohttp|from aiohttp', re.IGNORECASE),
+                "fetch": re.compile(r'fetch\s*\(', re.IGNORECASE),
+                "axios": re.compile(r'import axios|from axios', re.IGNORECASE)
+            },
+            "date_handling": {
+                "datetime": re.compile(r'from datetime import|import datetime', re.IGNORECASE),
+                "arrow": re.compile(r'import arrow', re.IGNORECASE),
+                "pendulum": re.compile(r'import pendulum', re.IGNORECASE),
+                "moment": re.compile(r'import moment|require.*moment', re.IGNORECASE),
+                "dayjs": re.compile(r'import dayjs|require.*dayjs', re.IGNORECASE)
+            },
+            "logging": {
+                "logging": re.compile(r'import logging', re.IGNORECASE),
+                "loguru": re.compile(r'import loguru|from loguru', re.IGNORECASE),
+                "console.log": re.compile(r'console\.log', re.IGNORECASE),
+                "winston": re.compile(r'import winston|require.*winston', re.IGNORECASE)
+            }
+        }
+        
+        source_files = self.get_file_list(['.py', '.js', '.ts'])[:30]  # Limit for performance
+        
+        # Track usage patterns across files
+        usage_tracker = defaultdict(lambda: defaultdict(list))
+        
+        for file_path in source_files:
+            if token:
+                token.check_cancellation()
+            
+            content = self.read_file_content(file_path)
+            if not content:
+                continue
+            
+            relative_path = str(file_path.relative_to(self.repo_path))
+            
+            # Check for different framework usage patterns
+            for category, patterns in framework_patterns.items():
+                for framework, pattern in patterns.items():
+                    if pattern.search(content):
+                        usage_tracker[category][framework].append(relative_path)
+        
+        # Identify inconsistencies (multiple frameworks used for same purpose)
+        for category, framework_usage in usage_tracker.items():
+            if len(framework_usage) > 1:  # Multiple frameworks used
+                frameworks_used = list(framework_usage.keys())
+                total_files = sum(len(files) for files in framework_usage.values())
+                
+                inconsistency_info = {
+                    "category": category.replace('_', ' ').title(),
+                    "frameworks_used": frameworks_used,
+                    "total_affected_files": total_files,
+                    "details": []
+                }
+                
+                for framework, files in framework_usage.items():
+                    inconsistency_info["details"].append({
+                        "framework": framework,
+                        "files": files[:5],  # Limit to first 5 files
+                        "file_count": len(files)
+                    })
+                
+                inconsistencies[category] = inconsistency_info
+        
+        # Generate summary
+        total_inconsistencies = len([cat for cat, data in inconsistencies.items() 
+                                   if isinstance(data, dict) and data.get("frameworks_used")])
+        
+        inconsistencies["inconsistency_summary"] = {
+            "total_categories_with_inconsistencies": total_inconsistencies,
+            "most_problematic_category": max(
+                [(cat, data.get("total_affected_files", 0)) for cat, data in inconsistencies.items() 
+                 if isinstance(data, dict) and "total_affected_files" in data],
+                key=lambda x: x[1], default=("none", 0)
+            )[0] if total_inconsistencies > 0 else "none"
+        }
+        
+        return inconsistencies
+    
+    def _analyze_code_duplication_enhanced(self, token=None) -> Dict[str, Any]:
+        """Enhanced code duplication analysis with categorization"""
+        
+        duplication = {
+            "exact_duplicates": [],
+            "similar_functions": [],
+            "structural_duplicates": [],
+            "duplication_summary": {},
+            "consolidation_opportunities": []
+        }
+        
+        source_files = self.get_file_list(['.py', '.js', '.ts'])[:20]  # Limit for performance
+        
+        # Track code blocks for comparison
+        code_blocks = []
+        function_signatures = defaultdict(list)
+        
+        for file_path in source_files:
+            if token:
+                token.check_cancellation()
+            
+            content = self.read_file_content(file_path)
+            if not content or len(content) > 50000:  # Skip very large files
+                continue
+            
+            relative_path = str(file_path.relative_to(self.repo_path))
+            lines = content.split('\n')
+            
+            # Extract functions for comparison
+            if file_path.suffix == '.py':
+                self._extract_python_functions(content, relative_path, function_signatures, code_blocks)
+            elif file_path.suffix in ['.js', '.ts']:
+                self._extract_js_functions(content, relative_path, function_signatures, code_blocks)
+            
+            # Check for exact line duplicates
+            self._find_exact_duplicates(lines, relative_path, duplication)
+        
+        # Find similar functions
+        self._find_similar_functions(function_signatures, duplication)
+        
+        # Find structural duplicates
+        self._find_structural_duplicates(code_blocks, duplication)
+        
+        # Generate consolidation opportunities
+        self._generate_consolidation_opportunities(duplication)
+        
+        # Summary
+        duplication["duplication_summary"] = {
+            "exact_duplicates": len(duplication["exact_duplicates"]),
+            "similar_functions": len(duplication["similar_functions"]),
+            "structural_duplicates": len(duplication["structural_duplicates"]),
+            "total_opportunities": len(duplication["consolidation_opportunities"])
+        }
+        
+        return duplication
+    
+    def _extract_python_functions(self, content: str, file_path: str, function_signatures: Dict, code_blocks: List):
+        """Extract Python function information"""
+        
+        func_pattern = re.compile(r'def\s+(\w+)\s*\([^)]*\):', re.MULTILINE)
+        matches = list(func_pattern.finditer(content))
+        
+        for match in matches:
+            func_name = match.group(1)
+            start_pos = match.start()
+            line_num = content[:start_pos].count('\n') + 1
+            
+            # Extract function body (simplified)
+            lines = content[start_pos:].split('\n')[:20]  # Limit to first 20 lines
+            func_body = '\n'.join(lines)
+            
+            function_signatures[func_name].append({
+                "file": file_path,
+                "line": line_num,
+                "body": func_body,
+                "signature": match.group(0)
+            })
+    
+    def _extract_js_functions(self, content: str, file_path: str, function_signatures: Dict, code_blocks: List):
+        """Extract JavaScript/TypeScript function information"""
+        
+        # Simple function patterns
+        patterns = [
+            re.compile(r'function\s+(\w+)\s*\([^)]*\)', re.MULTILINE),
+            re.compile(r'const\s+(\w+)\s*=\s*\([^)]*\)\s*=>', re.MULTILINE),
+            re.compile(r'(\w+)\s*:\s*function\s*\([^)]*\)', re.MULTILINE)
+        ]
+        
+        for pattern in patterns:
+            matches = list(pattern.finditer(content))
+            for match in matches:
+                func_name = match.group(1)
+                start_pos = match.start()
+                line_num = content[:start_pos].count('\n') + 1
+                
+                function_signatures[func_name].append({
+                    "file": file_path,
+                    "line": line_num,
+                    "signature": match.group(0)
+                })
+    
+    def _find_exact_duplicates(self, lines: List[str], file_path: str, duplication: Dict):
+        """Find exact duplicate lines"""
+        
+        line_counts = Counter()
+        significant_lines = []
+        
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if len(stripped) > 15 and not stripped.startswith('#') and not stripped.startswith('//'):
+                line_counts[stripped] += 1
+                significant_lines.append((i + 1, stripped))
+        
+        # Find lines that appear multiple times
+        for line_content, count in line_counts.items():
+            if count > 2:  # Appears more than twice
+                line_numbers = [line_num for line_num, content in significant_lines if content == line_content]
+                
+                duplication["exact_duplicates"].append({
+                    "file": file_path,
+                    "content": line_content[:80] + "..." if len(line_content) > 80 else line_content,
+                    "occurrences": count,
+                    "lines": line_numbers[:5],  # First 5 occurrences
+                    "category": "exact_duplicate",
+                    "consolidation_potential": "high" if count > 3 else "medium"
+                })
+    
+    def _find_similar_functions(self, function_signatures: Dict, duplication: Dict):
+        """Find functions with similar names that might be duplicates"""
+        
+        for func_name, occurrences in function_signatures.items():
+            if len(occurrences) > 1:  # Same function name in multiple files
+                duplication["similar_functions"].append({
+                    "function_name": func_name,
+                    "occurrences": len(occurrences),
+                    "files": [occ["file"] for occ in occurrences[:5]],
+                    "category": "similar_function",
+                    "consolidation_potential": "medium"
+                })
+    
+    def _find_structural_duplicates(self, code_blocks: List, duplication: Dict):
+        """Find structurally similar code blocks"""
+        # Simple implementation - can be enhanced with AST analysis
+        pass
+    
+    def _generate_consolidation_opportunities(self, duplication: Dict):
+        """Generate actionable consolidation opportunities"""
+        
+        opportunities = []
+        
+        # From exact duplicates
+        for dup in duplication["exact_duplicates"]:
+            if dup["consolidation_potential"] == "high":
+                opportunities.append({
+                    "type": "Extract Constant/Method",
+                    "description": f"Duplicate code found in {dup['file']} ({dup['occurrences']} times)",
+                    "priority": "high",
+                    "effort": "low"
+                })
+        
+        # From similar functions
+        for func in duplication["similar_functions"]:
+            if len(func["files"]) > 2:
+                opportunities.append({
+                    "type": "Create Common Utility",
+                    "description": f"Function '{func['function_name']}' appears in {len(func['files'])} files",
+                    "priority": "medium", 
+                    "effort": "medium"
+                })
+        
+        duplication["consolidation_opportunities"] = opportunities
+
     def _generate_debt_summary_ultra_fast(self, code_smells: Dict, complexity_metrics: Dict, 
                                          todo_analysis: Dict, deprecated_code: Dict) -> Dict[str, Any]:
-        """Ultra-fast debt summary generation"""
         
         # Quick counting without deep analysis
         smell_count = sum(len(items) for items in code_smells.values() if isinstance(items, list))
@@ -322,9 +817,6 @@ class TechDebtDetectionAnalyzer(BaseAnalyzer):
     
     def render(self):
         """Render the technical debt analysis"""
-        st.header("🔧 Technical Debt Detection")
-        st.markdown("Identifying code quality issues and technical debt patterns")
-        
         # Add rerun button
         self.add_rerun_button("tech_debt_detection")
         
@@ -382,14 +874,99 @@ class TechDebtDetectionAnalyzer(BaseAnalyzer):
             if long_methods:
                 st.write("**Long Methods:**")
                 for method in long_methods:
-                    st.write(f"• {method['method']} ({method['lines']} lines) - {method['file']}")
+                    severity_icon = "🔴" if method.get("severity") == "high" else "🟡"
+                    st.write(f"{severity_icon} {method['method']} ({method['lines']} lines) - {method['file']}")
             
             # Show top large classes
             large_classes = code_smells["large_classes"][:3]
             if large_classes:
                 st.write("**Large Classes:**")
                 for cls in large_classes:
-                    st.write(f"• {cls['class']} ({cls['methods']} methods) - {cls['file']}")
+                    severity_icon = "🔴" if cls.get("severity") == "high" else "🟡"
+                    st.write(f"{severity_icon} {cls['class']} ({cls['methods']} methods) - {cls['file']}")
+
+        # Enhanced Detailed Code Smells Section
+        with st.expander("🔍 Detailed Code Smells", expanded=False):
+            
+            # Long Methods Section
+            st.write("### 📏 Long Methods")
+            if long_methods:
+                long_methods_data = []
+                for method in code_smells["long_methods"][:10]:
+                    long_methods_data.append({
+                        "File": method["file"],
+                        "Method": method["method"],
+                        "Lines": method["lines"],
+                        "Severity": method.get("severity", "medium"),
+                        "Risk Score": method.get("risk_score", 0)
+                    })
+                
+                df_methods = pd.DataFrame(long_methods_data)
+                st.dataframe(df_methods, use_container_width=True)
+            else:
+                st.success("✅ No long methods detected")
+            
+            st.write("---")
+            
+            # Large Classes Section
+            st.write("### 🏢 Large Classes")
+            if large_classes:
+                large_classes_data = []
+                for cls in code_smells["large_classes"][:10]:
+                    large_classes_data.append({
+                        "File": cls["file"],
+                        "Class": cls["class"],
+                        "Methods": cls["methods"],
+                        "Lines": cls["lines"],
+                        "Severity": cls.get("severity", "medium"),
+                        "Complexity Score": cls.get("complexity_score", 0)
+                    })
+                
+                df_classes = pd.DataFrame(large_classes_data)
+                st.dataframe(df_classes, use_container_width=True)
+            else:
+                st.success("✅ No large classes detected")
+            
+            st.write("---")
+            
+            # Magic Numbers Section
+            st.write("### 🔢 Magic Numbers")
+            magic_numbers = code_smells.get("magic_numbers", [])
+            if magic_numbers:
+                magic_data = []
+                for magic in magic_numbers[:15]:
+                    magic_data.append({
+                        "File": magic["file"],
+                        "Line": magic["line"],
+                        "Magic Number": magic["number"],
+                        "Context": magic["context"][:50] + "..." if len(magic["context"]) > 50 else magic["context"]
+                    })
+                
+                df_magic = pd.DataFrame(magic_data)
+                st.dataframe(df_magic, use_container_width=True)
+            else:
+                st.success("✅ No magic numbers detected")
+            
+            st.write("---")
+            
+            # Nested Complexity Section
+            st.write("### 🌀 Nested Complexity")
+            nested_complexity = code_smells.get("nested_complexity", [])
+            if nested_complexity:
+                nested_data = []
+                for nested in nested_complexity:
+                    nested_data.append({
+                        "File": nested["file"],
+                        "Line": nested["line"],
+                        "Nesting Depth": nested["nesting_depth"],
+                        "Severity": nested.get("severity", "medium"),
+                        "Code": nested["content"]
+                    })
+                
+                df_nested = pd.DataFrame(nested_data)
+                st.dataframe(df_nested, use_container_width=True)
+            else:
+                st.success("✅ No deeply nested code detected")
         
         # Complexity Analysis
         st.subheader("🔄 Complexity Metrics")
@@ -459,7 +1036,65 @@ class TechDebtDetectionAnalyzer(BaseAnalyzer):
                 st.write(f"• **{item['type']}**: {item['text']} ({item['file']}:{item['line']})")
         else:
             st.success("No high priority items found")
+
+        # NEW FEATURE 2: Framework Inconsistencies
+        st.subheader("⚖️ Framework Inconsistencies")
         
+        inconsistencies = analysis.get("framework_inconsistencies", {})
+        inconsistency_summary = inconsistencies.get("inconsistency_summary", {})
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            total_inconsistencies = inconsistency_summary.get("total_categories_with_inconsistencies", 0)
+            st.metric("Inconsistent Categories", total_inconsistencies)
+            
+            if total_inconsistencies > 0:
+                most_problematic = inconsistency_summary.get("most_problematic_category", "none")
+                st.info(f"💡 **Most Problematic**: {most_problematic.replace('_', ' ').title()}")
+        
+        with col2:
+            # Show framework inconsistency chart if any exist
+            inconsistency_data = []
+            for category, data in inconsistencies.items():
+                if isinstance(data, dict) and "frameworks_used" in data:
+                    inconsistency_data.append({
+                        "Category": data["category"],
+                        "Frameworks": len(data["frameworks_used"]),
+                        "Affected Files": data["total_affected_files"]
+                    })
+            
+            if inconsistency_data:
+                df = pd.DataFrame(inconsistency_data)
+                fig = px.bar(df, x="Category", y="Affected Files", title="Framework Inconsistencies by Category")
+                st.plotly_chart(fig, use_container_width=True)
+        
+        # Detailed Framework Inconsistencies
+        if total_inconsistencies > 0:
+            with st.expander("🔍 Framework Inconsistency Details", expanded=False):
+                for category, data in inconsistencies.items():
+                    if isinstance(data, dict) and "frameworks_used" in data:
+                        st.write(f"**{data['category']} Inconsistencies**")
+                        st.write(f"Multiple frameworks detected: {', '.join(data['frameworks_used'])}")
+                        
+                        # Create table showing framework usage
+                        detail_data = []
+                        for detail in data["details"]:
+                            detail_data.append({
+                                "Framework": detail["framework"],
+                                "Files Using": detail["file_count"],
+                                "Example Files": ", ".join(detail["files"][:3])
+                            })
+                        
+                        if detail_data:
+                            detail_df = pd.DataFrame(detail_data)
+                            st.dataframe(detail_df, use_container_width=True)
+                            
+                            st.warning(f"💡 **Recommendation**: Standardize on one {data['category'].lower()} approach across the codebase")
+                        st.write("---")
+        else:
+            st.success("✅ No framework inconsistencies detected - codebase uses consistent approaches")
+
         # Display AI insights from parallel analysis if available
         self.display_parallel_ai_insights("tech_debt_detection")
         

@@ -944,9 +944,6 @@ class DesignPatternAnalyzer(BaseAnalyzer):
     
     def render(self):
         """Render the design pattern analysis"""
-        st.header("🏗️ Design Pattern Analysis")
-        st.markdown("Analyzing design pattern usage and deviations from best practices")
-        
         # Add rerun button
         self.add_rerun_button("design_patterns")
         
@@ -1118,39 +1115,6 @@ class DesignPatternAnalyzer(BaseAnalyzer):
         else:
             st.success("No anti-patterns detected")
         
-        # AI-powered Pattern Analysis
-        st.subheader("🤖 AI Pattern Analysis")
-        
-        if st.button("Get AI Pattern Recommendations"):
-            with self.display_loading_message("Generating pattern analysis..."):
-                # Prepare context for AI
-                pattern_context = {
-                    "solid_score": pattern_summary["solid_score"],
-                    "total_patterns": pattern_summary["total_patterns"],
-                    "pattern_diversity": pattern_summary["pattern_diversity"],
-                    "violation_count": pattern_summary["violation_count"],
-                    "pattern_health": pattern_summary["pattern_health"],
-                    "detected_patterns": list(pattern_counts.keys()) if pattern_counts else [],
-                    "anti_patterns": list(anti_pattern_counts.keys()) if anti_pattern_counts else []
-                }
-                
-                prompt = f"""
-                Based on this design pattern analysis:
-                
-                Pattern Summary: {pattern_context}
-                
-                Please provide:
-                1. Assessment of current design pattern usage
-                2. Recommendations for improving SOLID principle compliance
-                3. Suggestions for addressing anti-patterns
-                4. Best practices for pattern implementation
-                5. Architectural improvement recommendations
-                """
-                
-                ai_insights = self.ai_client.query(prompt)
-                
-                if ai_insights:
-                    st.markdown("**AI Pattern Analysis:**")
-                    st.markdown(ai_insights)
-                else:
-                    st.error("Failed to generate pattern analysis")
+        # Add save options
+        st.markdown("---")
+        self.add_save_options("design_patterns", analysis)
