@@ -722,7 +722,8 @@ def main():
 
     # Handle summary popup display using st.dialog as context manager
     if st.session_state.get('show_summary_popup', False):
-        with st.dialog("📋 Comprehensive Project Summary"):
+        @st.dialog("📋 Comprehensive Project Summary")
+        def show_summary_dialog():
             actual_repo_path = st.session_state.get('actual_repo_path', '')
             
             if not actual_repo_path or not os.path.exists(actual_repo_path):
@@ -744,10 +745,10 @@ def main():
                     st.info(summary_data['architecture'])
                     
                     st.subheader("💻 Languages and Frameworks")
-                    st.code(summary_data['languages_frameworks'], language='text')
+                    st.info(summary_data['languages_frameworks'])
                     
                     st.subheader("📁 Project Structure")
-                    st.code(summary_data['project_structure'], language='text')
+                    st.info(summary_data['project_structure'])
                     
                     if summary_data['authentication_authorization']:
                         st.subheader("🔐 Authentication and Authorization")
@@ -763,6 +764,9 @@ def main():
                     if st.button("Close", type="primary"):
                         st.session_state.show_summary_popup = False
                         st.rerun()
+        
+        # Call the dialog function
+        show_summary_dialog()
 
     # Apply CSS class conditionally for sidebar collapse with ultra-aggressive DOM manipulation
     if st.session_state.sidebar_collapsed:
@@ -1459,13 +1463,29 @@ def generate_project_summary(repo_path: str) -> dict:
         
         print(f"DEBUG: Primary languages: {primary_languages}")
         
-        # Generate project summary
+        # Generate project summary - formatted as bullet points
         if len(project_files) == 0:
-            summary_data['project_summary'] = "No files detected in the repository. Please check if the path is correct and contains files."
+            summary_data['project_summary'] = "• No files detected in the repository. Please check if the path is correct and contains files."
         elif detected_frameworks:
-            summary_data['project_summary'] = f"""This repository represents a {', '.join(detected_frameworks[:2])} application primarily built with {', '.join(primary_languages[:2]) if primary_languages else 'multiple technologies'}. The project contains {len(project_files)} files across various modules and demonstrates {detected_frameworks[0] if detected_frameworks else 'modern'} development practices. The codebase appears to be structured for {'web development' if any(fw in detected_frameworks for fw in ['React', 'Angular', 'Vue', 'Django', 'Flask']) else 'software development'} with clear separation of concerns and modular architecture."""
+            summary_data['project_summary'] = f"""• **Technology Stack**: {', '.join(detected_frameworks[:2])} application built with {', '.join(primary_languages[:2]) if primary_languages else 'multiple technologies'}
+
+• **Project Scale**: Contains {len(project_files)} files across various modules
+
+• **Development Approach**: Demonstrates {detected_frameworks[0] if detected_frameworks else 'modern'} development practices
+
+• **Architecture Focus**: Structured for {'web development' if any(fw in detected_frameworks for fw in ['React', 'Angular', 'Vue', 'Django', 'Flask']) else 'software development'} with clear separation of concerns
+
+• **Code Organization**: Features modular architecture for maintainability and scalability"""
         else:
-            summary_data['project_summary'] = f"""This repository is a software project primarily written in {', '.join(primary_languages[:2]) if primary_languages else 'multiple programming languages'}. The project contains {len(project_files)} files organized in a structured manner following standard development practices. The codebase demonstrates good organization with clear file hierarchy and separation of different components and functionalities."""
+            summary_data['project_summary'] = f"""• **Primary Languages**: {', '.join(primary_languages[:2]) if primary_languages else 'Multiple programming languages'}
+
+• **Project Scale**: Contains {len(project_files)} files organized in structured manner
+
+• **Development Standards**: Follows standard development practices and conventions
+
+• **Code Quality**: Demonstrates good organization with clear file hierarchy
+
+• **Component Structure**: Clear separation of different components and functionalities"""
         
         # Get directory structure
         dir_structure = []
@@ -1491,7 +1511,18 @@ def generate_project_summary(repo_path: str) -> dict:
         if any('module' in f.lower() or 'analyzer' in f.lower() for f in project_files):
             architecture_patterns.append("Modular architecture")
         
-        summary_data['architecture'] = f"""The project follows a {', '.join(architecture_patterns) if architecture_patterns else 'layered'} architectural pattern. The codebase is organized into {len(dir_structure)} main directories: {', '.join(dir_structure[:5])}{'...' if len(dir_structure) > 5 else ''}. {'This structure indicates a ' + detected_frameworks[0] + ' application' if detected_frameworks else 'The architectural approach'} with clear separation between different layers of the application. The organization suggests a focus on maintainability and scalability, with dedicated areas for different concerns such as business logic, data handling, and user interface components."""
+        # Generate architecture - formatted as bullet points
+        summary_data['architecture'] = f"""• **Architectural Pattern**: {', '.join(architecture_patterns) if architecture_patterns else 'Layered architectural approach'}
+
+• **Directory Organization**: {len(dir_structure)} main directories - {', '.join(dir_structure[:5])}{'...' if len(dir_structure) > 5 else ''}
+
+• **Application Type**: {'Indicates a ' + detected_frameworks[0] + ' application structure' if detected_frameworks else 'Standard software application architecture'}
+
+• **Layer Separation**: Clear separation between different layers of the application
+
+• **Design Focus**: Emphasizes maintainability and scalability principles
+
+• **Concerns Separation**: Dedicated areas for business logic, data handling, and user interface components"""
         
         # Generate languages and frameworks
         if main_languages:
@@ -1519,15 +1550,22 @@ def generate_project_summary(repo_path: str) -> dict:
 
 The structure follows {'framework conventions' if detected_frameworks else 'standard development practices'} with clear separation of source code, configuration files, documentation, and build artifacts. This organization facilitates easy navigation, promotes code maintainability, and supports collaborative development by providing a predictable project layout."""
         
-        # Generate authentication/authorization if detected
+        # Generate authentication/authorization if detected - formatted as bullet points
         if auth_indicators:
             auth_files = [f for f in auth_indicators[:5]]  # Limit to 5 files
-            summary_data['authentication_authorization'] = f"""The repository contains authentication and authorization mechanisms as evidenced by {len(auth_indicators)} security-related files.
+            summary_data['authentication_authorization'] = f"""• **Security Implementation**: Repository contains authentication and authorization mechanisms ({len(auth_indicators)} security-related files detected)
 
-**Key Security Files Detected:**
-{chr(10).join(f"• {file}" for file in auth_files)}
+• **Key Security Files**: {', '.join(auth_files[:3])}{'...' if len(auth_files) > 3 else ''}
 
-The presence of these files indicates the application implements user management, access control, and security features. This suggests a multi-user system with role-based permissions and secure authentication protocols, likely including features such as user login, session management, and protected resource access."""
+• **User Management**: Application implements user management and access control features
+
+• **Security Features**: Multi-user system with role-based permissions and secure authentication protocols
+
+• **Authentication Methods**: Likely includes user login, session management, and token-based authentication
+
+• **Access Control**: Protected resource access with authorization mechanisms
+
+• **Security Architecture**: Demonstrates security-first approach with proper authentication layers"""
         
         print(f"DEBUG: Summary generation completed successfully")
         return summary_data
