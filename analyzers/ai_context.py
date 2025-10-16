@@ -764,58 +764,9 @@ class AIContextAnalyzer(BaseAnalyzer):
                 )
                 st.plotly_chart(fig_types, use_container_width=True)
         
-        # Extension Points
-        st.subheader("🔌 Extension Points")
-        
-        extension_points = analysis["extension_points"]
-        if extension_points:
-            ext_df = pd.DataFrame([
-                {
-                    "Type": ep["type"],
-                    "Name": ep["name"],
-                    "File": ep["file"],
-                    "Line": ep["line"],
-                    "Extensibility Score": ep["extensibility_score"]
-                }
-                for ep in extension_points[:15]
-            ])
-            
-            st.dataframe(ext_df, use_container_width=True)
-            
-            # Extension points by type
-            type_counts = Counter(ep["type"] for ep in extension_points)
-            if type_counts:
-                fig_ext_types = px.bar(
-                    x=list(type_counts.keys()),
-                    y=list(type_counts.values()),
-                    title="Extension Points by Type"
-                )
-                st.plotly_chart(fig_ext_types, use_container_width=True)
-        else:
-            st.info("No extension points found")
-        
-        # Architectural Patterns
-        st.subheader("🏗️ Architectural Patterns")
-        
-        arch_patterns = analysis["architectural_patterns"]
-        pattern_scores = {k: v["score"] for k, v in arch_patterns.items() if v["score"] > 0}
-        
-        if pattern_scores:
-            fig_patterns = px.bar(
-                x=list(pattern_scores.keys()),
-                y=list(pattern_scores.values()),
-                title="Architectural Pattern Indicators"
-            )
-            st.plotly_chart(fig_patterns, use_container_width=True)
-            
-            # Show dominant pattern details
-            dominant = max(pattern_scores.items(), key=lambda x: x[1])
-            st.info(f"**Dominant Pattern:** {dominant[0].upper()} (Score: {dominant[1]})")
-        else:
-            st.info("No clear architectural patterns detected")
         
         # Similar Implementations
-        st.subheader("📋 Similar Implementation Templates")
+        st.subheader("� Similar Implementation Templates")
         st.info("No similar implementations found - feature optimized for performance")
         
         # Module Dependencies
@@ -857,7 +808,7 @@ class AIContextAnalyzer(BaseAnalyzer):
             st.info("No dependency information found")
         
         # AI Recommendations
-        st.subheader("💡 AI Recommendations")
+        st.subheader("� AI Recommendations")
         
         recommendations = analysis["recommendations"]
         if recommendations:
