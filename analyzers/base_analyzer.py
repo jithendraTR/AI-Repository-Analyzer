@@ -245,7 +245,7 @@ class BaseAnalyzer(ABC):
     
     def filter_commits_by_time_frame(self, commits: List[Dict]) -> List[Dict]:
         """
-        Filter commits based on selected time frame from session state
+        Filter commits based on selected time frame from session state with timezone-aware handling
         
         Args:
             commits: List of commit dictionaries with 'date' field
@@ -258,45 +258,73 @@ class BaseAnalyzer(ABC):
         
         # If 'all' is selected, return all commits
         if selected_time_frame == 'all':
+            # Clear any previous error when showing all commits
+            if 'commit_filter_error' in st.session_state:
+                del st.session_state['commit_filter_error']
             return commits
         
-        # Calculate cutoff date based on selection
-        now = datetime.now()
-        cutoff_date = None
+        # Calculate cutoff date based on selection using UTC for consistency
+        from datetime import timezone
+        now_utc = datetime.now(timezone.utc)
+        cutoff_date_utc = None
         
         if selected_time_frame == '1_year':
-            cutoff_date = now - timedelta(days=365)
+            cutoff_date_utc = now_utc - timedelta(days=365)
         elif selected_time_frame == '2_years':
-            cutoff_date = now - timedelta(days=2*365)
+            cutoff_date_utc = now_utc - timedelta(days=2*365)
         elif selected_time_frame == '3_years':
-            cutoff_date = now - timedelta(days=3*365)
+            cutoff_date_utc = now_utc - timedelta(days=3*365)
         elif selected_time_frame == '5_years':
-            cutoff_date = now - timedelta(days=5*365)
+            cutoff_date_utc = now_utc - timedelta(days=5*365)
         else:
             # Default to all commits if unknown selection
+            if 'commit_filter_error' in st.session_state:
+                del st.session_state['commit_filter_error']
             return commits
         
-        # Filter commits based on cutoff date
+        # Filter commits based on cutoff date with proper timezone handling
         filtered_commits = []
         for commit in commits:
             commit_date = commit.get('date')
             if commit_date:
-                # Handle both timezone-aware and naive datetime objects
-                if hasattr(commit_date, 'replace'):
-                    # It's a datetime object
-                    if commit_date.tzinfo is not None:
-                        # Convert to naive datetime for comparison
-                        commit_date_naive = commit_date.replace(tzinfo=None)
+                try:
+                    # Normalize commit date to UTC for consistent comparison
+                    if hasattr(commit_date, 'tzinfo'):
+                        if commit_date.tzinfo is not None:
+                            # Convert timezone-aware datetime to UTC
+                            commit_date_utc = commit_date.astimezone(timezone.utc)
+                        else:
+                            # Treat naive datetime as UTC (common for Git commits)
+                            commit_date_utc = commit_date.replace(tzinfo=timezone.utc)
                     else:
-                        commit_date_naive = commit_date
+                        # Handle other datetime formats by converting to string then parsing
+                        if isinstance(commit_date, str):
+                            try:
+                                parsed_date = pd.to_datetime(commit_date)
+                                if parsed_date.tzinfo is not None:
+                                    commit_date_utc = parsed_date.astimezone(timezone.utc)
+                                else:
+                                    commit_date_utc = parsed_date.replace(tzinfo=timezone.utc)
+                            except:
+                                # If parsing fails, skip this commit from filtering
+                                filtered_commits.append(commit)
+                                continue
+                        else:
+                            # If not a recognizable date format, include the commit
+                            filtered_commits.append(commit)
+                            continue
                     
-                    if commit_date_naive >= cutoff_date:
+                    # Compare UTC-normalized dates
+                    if commit_date_utc >= cutoff_date_utc:
                         filtered_commits.append(commit)
-                else:
-                    # If date is not a datetime object, include it
+                        
+                except Exception as e:
+                    # On any timezone conversion error, include the commit to avoid breaking
+                    # This ensures backwards compatibility
                     filtered_commits.append(commit)
+                    continue
             else:
-                # If no date field, include the commit
+                # If no date field, include the commit to maintain existing behavior
                 filtered_commits.append(commit)
         
         # Check if filtering resulted in empty commits and provide appropriate error handling
@@ -316,7 +344,7 @@ class BaseAnalyzer(ABC):
                 'has_commits': len(commits) > 0
             }
         else:
-            # Clear any previous error
+            # Clear any previous error when commits are found
             if 'commit_filter_error' in st.session_state:
                 del st.session_state['commit_filter_error']
         

@@ -45,19 +45,40 @@ class TimelineAnalyzer(BaseAnalyzer):
             total_steps = 9  # Increased steps for enhanced analysis
             current_step = 0
             
-            # Step 1: Get minimal commit history for speed
+            # Step 1: Get minimal commit history for speed AND apply time frame filtering
             if progress_callback:
                 progress_callback(current_step, total_steps, "Loading commit history (limited for performance)...")
             
             if token:
                 token.check_cancellation()
             
-            # Significantly reduce commit limit for speed (300 instead of 800)
+            # Get commits and apply time frame filtering
             commits_data = self._get_ultra_optimized_timeline_data(token, max_commits=300)
-            commits = commits_data['commits']
+            all_commits = commits_data['commits']
             
-            if not commits:
+            if not all_commits:
                 return {"error": "No commit history found"}
+            
+            # Apply time frame filtering using base class method
+            commits = self.filter_commits_by_time_frame(all_commits)
+            
+            # Always update commits_data with filtered commits (even if empty)
+            commits_data['commits'] = commits
+            
+            # If no commits after filtering, return a special result (not an error)
+            if not commits:
+                return {
+                    "no_commits_for_period": True,
+                    "total_commits": len(all_commits),
+                    "selected_period": self._get_selected_period_description(),
+                    "timeline_data": {},
+                    "recent_changes": {},
+                    "development_phases": [],
+                    "file_evolution": {},
+                    "release_patterns": {},
+                    "project_age": {},
+                    "total_commits": 0
+                }
             current_step += 1
             
             # Step 2: Fast timeline patterns analysis
@@ -722,11 +743,35 @@ class TimelineAnalyzer(BaseAnalyzer):
         # Add rerun button
         self.add_rerun_button("timeline_analysis")
         
+        # Check for commit filtering errors first and show clear message
+        if self.display_commit_filter_error():
+            return  # Early exit when no commits found for selected time period
+        
         with self.display_loading_message("Analyzing project timeline..."):
             analysis = self.analyze()
         
         if "error" in analysis:
             self.display_error(analysis["error"])
+            return
+        
+        # Handle the special case where no commits found for selected period
+        if analysis.get("no_commits_for_period", False):
+            total_commits = analysis.get("total_commits", 0)
+            selected_period = analysis.get("selected_period", "selected time period")
+            
+            st.info(f"📅 No commits found for the {selected_period}")
+            
+            if total_commits > 0:
+                st.write(f"**Repository Summary:**")
+                st.write(f"• Total commits in repository: **{total_commits:,}**")
+                st.write(f"• Selected time frame: **{selected_period}**")
+                st.write(f"• No commits found within the selected time period")
+                
+                st.write("**💡 Suggestions:**")
+                st.write("• Try selecting 'All commits' to see the full repository history")
+                st.write("• Choose a longer time frame (e.g., 2 years, 5 years)")
+                st.write("• The repository may have older commit history outside your selected period")
+            
             return
         
         # Project overview metrics
@@ -2202,3 +2247,19 @@ class TimelineAnalyzer(BaseAnalyzer):
             recommendations.append("Maintain current security practices and stay updated with latest threats")
         
         return recommendations
+    
+    def _get_selected_period_description(self) -> str:
+        """Get human-readable description of the selected time period"""
+        import streamlit as st
+        
+        selected_period = st.session_state.get('selected_time_frame', 'all')
+        
+        period_descriptions = {
+            '1_year': 'last 1 year',
+            '2_years': 'last 2 years', 
+            '3_years': 'last 3 years',
+            '5_years': 'last 5 years',
+            'all': 'entire repository history'
+        }
+        
+        return period_descriptions.get(selected_period, 'selected time period')
