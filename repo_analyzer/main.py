@@ -1357,6 +1357,7 @@ def display_summary_modal():
         
         # Close button at bottom
         if st.button("✅ Close Summary", type="primary", use_container_width=True):
+            st.session_state.show_summary_popup = False
             st.rerun()
             
     except Exception as e:
