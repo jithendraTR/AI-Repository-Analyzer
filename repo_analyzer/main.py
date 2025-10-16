@@ -383,26 +383,31 @@ def main():
     # Initialize session state
     if 'analysis_complete' not in st.session_state:
         st.session_state.analysis_complete = False
-        if 'results' not in st.session_state:
-            st.session_state.results = {}
-        if 'sidebar_collapsed' not in st.session_state:
-            st.session_state.sidebar_collapsed = False
-        if 'analysis_running' not in st.session_state:
-            st.session_state.analysis_running = False
-        if 'current_analyzer' not in st.session_state:
-            st.session_state.current_analyzer = None
-        if 'last_repo_path' not in st.session_state:
-            st.session_state.last_repo_path = ""
-        if 'success_message' not in st.session_state:
-            st.session_state.success_message = ""
-        if 'success_message_time' not in st.session_state:
-            st.session_state.success_message_time = 0
-        if 'cancellation_token' not in st.session_state:
-            st.session_state.cancellation_token = None
-        if 'prepared_repo_info' not in st.session_state:
-            st.session_state.prepared_repo_info = None
-        if 'actual_repo_path' not in st.session_state:
-            st.session_state.actual_repo_path = ""
+    if 'results' not in st.session_state:
+        st.session_state.results = {}
+    if 'sidebar_collapsed' not in st.session_state:
+        st.session_state.sidebar_collapsed = False
+    if 'analysis_running' not in st.session_state:
+        st.session_state.analysis_running = False
+    if 'current_analyzer' not in st.session_state:
+        st.session_state.current_analyzer = None
+    if 'last_repo_path' not in st.session_state:
+        st.session_state.last_repo_path = ""
+    if 'success_message' not in st.session_state:
+        st.session_state.success_message = ""
+    if 'success_message_time' not in st.session_state:
+        st.session_state.success_message_time = 0
+    if 'cancellation_token' not in st.session_state:
+        st.session_state.cancellation_token = None
+    if 'prepared_repo_info' not in st.session_state:
+        st.session_state.prepared_repo_info = None
+    if 'actual_repo_path' not in st.session_state:
+        st.session_state.actual_repo_path = ""
+    # Initialize popup states to prevent interference
+    if 'show_summary_popup' not in st.session_state:
+        st.session_state.show_summary_popup = False
+    if 'show_dev_assistance_popup' not in st.session_state:
+        st.session_state.show_dev_assistance_popup = False
     
     # Hide Streamlit's default deploy button and menu + Fix styling + HIDE CHAIN LINK ICONS
     hide_streamlit_style = """
@@ -720,22 +725,26 @@ def main():
         btn_col1, btn_col2 = st.columns(2)
         
         with btn_col1:
-            # Dev Assistance button
-            if st.button("🤖 Dev Assistant", type="secondary", help="Get AI-powered development assistance", key="dev_assistance_button"):
+            # Dev Assistance button - with explicit state control
+            dev_assistant_clicked = st.button("🤖 Dev Assistant", type="secondary", help="Get AI-powered development assistance", key="dev_assistance_button")
+            if dev_assistant_clicked:
                 if st.session_state.get('actual_repo_path'):
                     # Ensure only one dialog is open at a time
                     st.session_state.show_dev_assistance_popup = True
                     st.session_state.show_summary_popup = False
+                    st.rerun()
                 else:
                     st.error("Please load a repository first!")
         
         with btn_col2:
-            # Summary button
-            if st.button("📋 Summary", type="secondary", help="Show comprehensive project analysis", key="summary_button"):
+            # Summary button - with explicit state control
+            summary_clicked = st.button("📋 Summary", type="secondary", help="Show comprehensive project analysis", key="summary_button")
+            if summary_clicked:
                 if st.session_state.get('actual_repo_path'):
                     # Ensure only one dialog is open at a time
                     st.session_state.show_summary_popup = True
                     st.session_state.show_dev_assistance_popup = False
+                    st.rerun()
                 else:
                     st.error("Please load a repository first!")
 
@@ -1170,6 +1179,10 @@ def main():
                         st.rerun()
             elif not st.session_state.analysis_running:
                 if st.button(f"🚀 Run {selected_count} Selected Analyses", type="primary", use_container_width=True):
+                    # IMMEDIATELY clear all popup states when Run Analysis is clicked - before any validation
+                    st.session_state.show_summary_popup = False
+                    st.session_state.show_dev_assistance_popup = False
+                    
                     # Check if repository is properly loaded
                     actual_repo_path = st.session_state.get('actual_repo_path', '')
                     original_repo_path = st.session_state.get('last_repo_path', '')
@@ -1227,6 +1240,10 @@ def main():
     
     # Handle analysis execution
     if st.session_state.analysis_running and not st.session_state.analysis_complete:
+        # Force disable all popups during analysis to prevent any interference
+        st.session_state.show_summary_popup = False
+        st.session_state.show_dev_assistance_popup = False
+        
         st.markdown("## 🔄 Analysis in Progress")
         st.markdown("Running AI-powered analysis on your repository...")
         
