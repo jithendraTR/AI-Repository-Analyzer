@@ -38,6 +38,7 @@ from analyzers.version_governance import VersionGovernanceAnalyzer
 from analyzers.tech_debt_detection import TechDebtDetectionAnalyzer
 from analyzers.design_patterns import DesignPatternAnalyzer
 from analyzers.singular_product_vision import SingularProductVisionAnalyzer
+from analyzers.dev_assistance_chatbot import DevAssistanceChatbotAnalyzer
 from utils.ai_client import OpenArenaClient
 from utils.git_handler import validate_and_prepare_repository, git_handler
 
@@ -74,7 +75,8 @@ class ParallelAIAnalyzer:
             'version_governance': VersionGovernanceAnalyzer(repo_path),
             'tech_debt': TechDebtDetectionAnalyzer(repo_path),
             'design_patterns': DesignPatternAnalyzer(repo_path),
-            'singular_product_vision': SingularProductVisionAnalyzer(repo_path)
+            'singular_product_vision': SingularProductVisionAnalyzer(repo_path),
+            'dev_assistance_chatbot': DevAssistanceChatbotAnalyzer(repo_path)
         }
         self.cancellation_token = None
     
@@ -1014,7 +1016,8 @@ def main():
                 'version_governance': '📦 Version Governance',
                 'tech_debt': '🔧 Technical Debt Detection',
                 'design_patterns': '🏗️ Design Patterns',
-                'singular_product_vision': '🎯 Singular Product Vision'
+                'singular_product_vision': '🎯 Singular Product Vision',
+                'dev_assistance_chatbot': '🤖 Dev Assistance Chatbot'
             }
             
             st.markdown("Choose which analyses to run on your repository")
@@ -1096,7 +1099,8 @@ def main():
                 'version_governance': '📦 Version Governance',
                 'tech_debt': '🔧 Technical Debt Detection',
                 'design_patterns': '🏗️ Design Patterns',
-                'singular_product_vision': '🎯 Singular Product Vision'
+                'singular_product_vision': '🎯 Singular Product Vision',
+                'dev_assistance_chatbot': '🤖 Dev Assistance Chatbot'
             }
             # Get selections from session state
             for key in analysis_options.keys():
@@ -1290,63 +1294,80 @@ def main():
         successful_results = {k: v for k, v in results.items() if v.get('success', False)}
         
         if successful_results:
-            # Create tabs for successful analyses
+            # Create tabs for successful analyses + Dev Assistance tab
             tab_names = []
             tab_data = []
             
+            # Add Dev Assistance tab first
+            tab_names.append("🤖 Dev Assistance")
+            tab_data.append(("dev_assistance_chatbot", {"special_tab": True}))
+            
             for analyzer_name, result in successful_results.items():
-                display_name = analyzer_name.replace('_', ' ').title()
-                tab_names.append(display_name)
-                tab_data.append((analyzer_name, result))
+                if analyzer_name != 'dev_assistance_chatbot':  # Skip if already added
+                    display_name = analyzer_name.replace('_', ' ').title()
+                    tab_names.append(display_name)
+                    tab_data.append((analyzer_name, result))
             
             tabs = st.tabs(tab_names)
             
             for i, (tab, (analyzer_name, result)) in enumerate(zip(tabs, tab_data)):
                 with tab:
-                    st.header(f"{analysis_options.get(analyzer_name, analyzer_name.replace('_', ' ').title())}")
-                    
-                    # First check if we should render with analyzer-specific UI
-                    analyzer_instance = None
-                    # Use actual_repo_path (could be local path or cloned Git repo path)
-                    actual_path = st.session_state.get('actual_repo_path', '')
-                    if actual_path and analyzer_name == 'timeline':
-                        analyzer_instance = TimelineAnalyzer(actual_path)
-                    elif actual_path and analyzer_name == 'expertise':
-                        analyzer_instance = ExpertiseMapper(actual_path)
-                    elif actual_path and analyzer_name == 'api_contracts':
-                        analyzer_instance = APIContractAnalyzer(actual_path)
-                    elif actual_path and analyzer_name == 'ai_context':
-                        analyzer_instance = AIContextAnalyzer(actual_path)
-                    elif actual_path and analyzer_name == 'risk_analysis':
-                        analyzer_instance = RiskAnalysisAnalyzer(actual_path)
-                    elif actual_path and analyzer_name == 'development_patterns':
-                        analyzer_instance = DevelopmentPatternsAnalyzer(actual_path)
-                    elif actual_path and analyzer_name == 'version_governance':
-                        analyzer_instance = VersionGovernanceAnalyzer(actual_path)
-                    elif actual_path and analyzer_name == 'tech_debt':
-                        analyzer_instance = TechDebtDetectionAnalyzer(actual_path)
-                    elif actual_path and analyzer_name == 'design_patterns':
-                        analyzer_instance = DesignPatternAnalyzer(actual_path)
-                    elif actual_path and analyzer_name == 'singular_product_vision':
-                        analyzer_instance = SingularProductVisionAnalyzer(actual_path)
-                    
-                    if analyzer_instance and hasattr(analyzer_instance, 'render'):
-                        # Store the analysis data in session state so the renderer can access it
-                        if 'analysis_data' in result:
-                            st.session_state[f"{analyzer_name}_analysis_data"] = result['analysis_data']
-                        # Render using the analyzer's custom renderer
-                        analyzer_instance.render()
-                    else:
-                        # Fallback to default rendering
-                        if 'insight' in result:
-                            st.markdown(result['insight'])
+                    # Handle special Dev Assistance tab
+                    if analyzer_name == 'dev_assistance_chatbot' and result.get('special_tab'):
+                        # Create and render the chatbot directly
+                        actual_path = st.session_state.get('actual_repo_path', '')
+                        if actual_path:
+                            chatbot_analyzer = DevAssistanceChatbotAnalyzer(actual_path)
+                            chatbot_analyzer.render()
                         else:
-                            st.error("No AI insight available for this analysis")
+                            st.error("❌ Repository not loaded. Please load a repository first!")
+                    else:
+                        st.header(f"{analysis_options.get(analyzer_name, analyzer_name.replace('_', ' ').title())}")
                         
-                        # Show raw data in expander if available
-                        if 'analysis_data' in result:
-                            with st.expander("📊 Raw Analysis Data"):
-                                st.json(result['analysis_data'])
+                        # First check if we should render with analyzer-specific UI
+                        analyzer_instance = None
+                        # Use actual_repo_path (could be local path or cloned Git repo path)
+                        actual_path = st.session_state.get('actual_repo_path', '')
+                        if actual_path and analyzer_name == 'timeline':
+                            analyzer_instance = TimelineAnalyzer(actual_path)
+                        elif actual_path and analyzer_name == 'expertise':
+                            analyzer_instance = ExpertiseMapper(actual_path)
+                        elif actual_path and analyzer_name == 'api_contracts':
+                            analyzer_instance = APIContractAnalyzer(actual_path)
+                        elif actual_path and analyzer_name == 'ai_context':
+                            analyzer_instance = AIContextAnalyzer(actual_path)
+                        elif actual_path and analyzer_name == 'risk_analysis':
+                            analyzer_instance = RiskAnalysisAnalyzer(actual_path)
+                        elif actual_path and analyzer_name == 'development_patterns':
+                            analyzer_instance = DevelopmentPatternsAnalyzer(actual_path)
+                        elif actual_path and analyzer_name == 'version_governance':
+                            analyzer_instance = VersionGovernanceAnalyzer(actual_path)
+                        elif actual_path and analyzer_name == 'tech_debt':
+                            analyzer_instance = TechDebtDetectionAnalyzer(actual_path)
+                        elif actual_path and analyzer_name == 'design_patterns':
+                            analyzer_instance = DesignPatternAnalyzer(actual_path)
+                        elif actual_path and analyzer_name == 'singular_product_vision':
+                            analyzer_instance = SingularProductVisionAnalyzer(actual_path)
+                        elif actual_path and analyzer_name == 'ai_assistance_dev_tool':
+                            analyzer_instance = AIAssistanceDevToolAnalyzer(actual_path)
+                        
+                        if analyzer_instance and hasattr(analyzer_instance, 'render'):
+                            # Store the analysis data in session state so the renderer can access it
+                            if 'analysis_data' in result:
+                                st.session_state[f"{analyzer_name}_analysis_data"] = result['analysis_data']
+                            # Render using the analyzer's custom renderer
+                            analyzer_instance.render()
+                        else:
+                            # Fallback to default rendering
+                            if 'insight' in result:
+                                st.markdown(result['insight'])
+                            else:
+                                st.error("No AI insight available for this analysis")
+                            
+                            # Show raw data in expander if available
+                            if 'analysis_data' in result:
+                                with st.expander("📊 Raw Analysis Data"):
+                                    st.json(result['analysis_data'])
         
         # Show any failures (excluding cancelled operations)
         failed_results = {k: v for k, v in results.items() 
