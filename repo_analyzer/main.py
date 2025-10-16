@@ -503,6 +503,62 @@ def main():
     .stTextInput [data-baseweb="input"] {
         background-color: white !important;
     }
+    
+    /* Hide only Streamlit's "Press Enter to apply" instruction text - surgical approach */
+    .stTextInput [data-testid="InputInstructions"] {
+        display: none !important;
+    }
+    
+    /* Target instruction text in various possible containers */
+    .stTextInput div[class*="instruction"] small,
+    .stTextInput div[class*="Instructions"] small,
+    .stTextInput small[class*="instruction"],
+    .stTextInput small[class*="Instructions"] {
+        display: none !important;
+    }
+    
+    /* Hide specific text content without affecting input or placeholder */
+    .stTextInput small {
+        color: transparent !important;
+        font-size: 0 !important;
+        height: 0 !important;
+        line-height: 0 !important;
+        overflow: hidden !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    
+    /* Preserve input and label functionality */
+    .stTextInput input,
+    .stTextInput label {
+        color: initial !important;
+        font-size: initial !important;
+        height: initial !important;
+        line-height: initial !important;
+        overflow: initial !important;
+        margin: initial !important;
+        padding: initial !important;
+    }
+    
+    /* Style placeholder text to look like proper placeholder - light and subtle */
+    .stTextInput input::placeholder {
+        color: #9ca3af !important;
+        font-weight: normal !important;
+        font-style: italic !important;
+        opacity: 0.7 !important;
+    }
+    
+    /* Additional targeting for Streamlit's input placeholder styling */
+    .stTextInput input[placeholder] {
+        color: #374151 !important;
+    }
+    
+    .stTextInput input[placeholder]::placeholder {
+        color: #9ca3af !important;
+        font-weight: normal !important;
+        font-style: italic !important;
+        opacity: 0.7 !important;
+    }
     </style>
     """
     st.markdown(hide_streamlit_style, unsafe_allow_html=True)
