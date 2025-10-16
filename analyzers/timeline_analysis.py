@@ -817,34 +817,9 @@ class TimelineAnalyzer(BaseAnalyzer):
             fig_monthly.update_xaxes(tickangle=45)
             st.plotly_chart(fig_monthly, use_container_width=True)
         
-        # Weekly velocity trend
-        if timeline_data["velocity_trend"]:
-            velocity_df = pd.DataFrame(timeline_data["velocity_trend"])
-            
-            fig_velocity = px.line(
-                velocity_df,
-                x='week',
-                y='commits',
-                title="Weekly Commit Velocity",
-                markers=True
-            )
-            fig_velocity.update_xaxes(tickangle=45)
-            st.plotly_chart(fig_velocity, use_container_width=True)
+        # Weekly velocity trend section removed per user request
         
-        # Hourly commit patterns
-        if timeline_data["hourly_commits"]:
-            hourly_df = pd.DataFrame([
-                {"Hour": hour, "Commits": count}
-                for hour, count in sorted(timeline_data["hourly_commits"].items())
-            ])
-            
-            fig_hourly = px.bar(
-                hourly_df,
-                x='Hour',
-                y='Commits',
-                title="Commit Activity by Hour of Day"
-            )
-            st.plotly_chart(fig_hourly, use_container_width=True)
+        # Hourly commit patterns section removed per user request
         
         # Recent changes analysis
         st.subheader("🆕 Recent Changes (Last 30 Days)")
@@ -928,133 +903,13 @@ class TimelineAnalyzer(BaseAnalyzer):
             
             st.dataframe(phases_df, use_container_width=True)
             
-            # Phase velocity chart
-            fig_phases = px.bar(
-                phases_df,
-                x='Phase',
-                y='Velocity',
-                title="Development Phase Velocity (Commits per Day)",
-                color='Dominant Activity'
-            )
-            st.plotly_chart(fig_phases, use_container_width=True)
+            # Phase velocity chart section removed per user request
         else:
             st.info("Not enough commit history to identify development phases")
         
-        # File evolution
-        st.subheader("📁 File Evolution")
+        # File evolution section removed per user request
         
-        file_evolution = analysis.get("file_evolution", {})
-        
-        # Defensive check - ensure file_evolution is always a dictionary
-        if not isinstance(file_evolution, dict):
-            st.info(f"File evolution data format issue - got {type(file_evolution).__name__} instead of dict")
-        elif not file_evolution:
-            st.info("No file evolution data available")
-        elif 'total_files_analyzed' in file_evolution:
-            # New simplified format - show basic stats
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Files Analyzed", file_evolution.get('total_files_analyzed', 0))
-            with col2:
-                st.metric("Most Common Extension", file_evolution.get('most_common_extension', 'unknown'))
-            with col3:
-                extensions = file_evolution.get('file_extensions', {})
-                st.metric("Extension Types", len(extensions))
-            
-            # Show file extensions breakdown
-            if extensions:
-                ext_df = pd.DataFrame([
-                    {"Extension": ext, "Mentions": count}
-                    for ext, count in extensions.items()
-                ])
-                
-                fig_ext = px.bar(
-                    ext_df,
-                    x='Extension',
-                    y='Mentions',
-                    title="File Extensions in Commit Messages"
-                )
-                st.plotly_chart(fig_ext, use_container_width=True)
-        
-        elif any('total_commits' in str(v) for v in file_evolution.values() if isinstance(v, dict)):
-            # Old detailed format - keep original logic
-            try:
-                active_files = sorted(
-                    [(path, stats) for path, stats in file_evolution.items() 
-                     if isinstance(stats, dict) and isinstance(stats.get('total_commits'), (int, float))],
-                    key=lambda x: x[1].get('total_commits', 0),
-                    reverse=True
-                )[:20]
-            except (KeyError, TypeError, AttributeError):
-                active_files = []
-            
-            if active_files:
-                files_df = pd.DataFrame([
-                    {
-                        "File": path,
-                        "Total Commits": stats['total_commits'],
-                        "Contributors": stats.get('contributors', 0),
-                        "Recent Activity": stats.get('recent_activity', 0),
-                        "Age (days)": (datetime.now() - stats['first_commit'].replace(tzinfo=None)).days if stats.get('first_commit') else 0
-                    }
-                    for path, stats in active_files
-                ])
-                
-                st.write("**Most Active Files:**")
-                st.dataframe(files_df, use_container_width=True)
-                
-                # File activity visualization
-                fig_files = px.scatter(
-                    files_df.head(15),
-                    x='Age (days)',
-                    y='Total Commits',
-                    size='Contributors',
-                    hover_name='File',
-                    title="File Activity vs Age"
-                )
-                st.plotly_chart(fig_files, use_container_width=True)
-            else:
-                st.info("No detailed file evolution data available")
-        else:
-            st.info("File evolution data format not recognized")
-        
-        # Release patterns
-        st.subheader("🚀 Release Patterns")
-        
-        release_data = analysis["release_patterns"]
-        if release_data and "releases" in release_data and release_data["releases"]:
-            releases_df = pd.DataFrame([
-                {
-                    "Release": release['name'],
-                    "Date": release['date'].strftime('%Y-%m-%d'),
-                    "Commit": release['commit'][:8]
-                }
-                for release in release_data["releases"]
-            ])
-            
-            st.dataframe(releases_df, use_container_width=True)
-            
-            if release_data["avg_release_interval"] > 0:
-                st.metric("Average Release Interval", f"{release_data['avg_release_interval']:.1f} days")
-            
-            # Release timeline
-            if len(release_data["releases"]) > 1:
-                releases_timeline_df = pd.DataFrame([
-                    {"Release": r['name'], "Date": r['date']}
-                    for r in release_data["releases"]
-                ])
-                
-                fig_releases = px.scatter(
-                    releases_timeline_df,
-                    x='Date',
-                    y=[1] * len(releases_timeline_df),
-                    hover_name='Release',
-                    title="Release Timeline"
-                )
-                fig_releases.update_yaxes(visible=False)
-                st.plotly_chart(fig_releases, use_container_width=True)
-        else:
-            st.info("No release tags found in the repository")
+        # Release patterns section removed per user request
         
         # Enhanced Analysis Sections
         st.header("🚀 Enhanced Historical Evolution Analysis")
@@ -1248,27 +1103,7 @@ class TimelineAnalyzer(BaseAnalyzer):
                 fig_perf_types.update_xaxes(tickangle=45)
                 st.plotly_chart(fig_perf_types, use_container_width=True)
             
-            # Quarterly performance improvements
-            if perf_data.get("quarterly_improvements"):
-                quarterly_data = []
-                for quarter, data in perf_data["quarterly_improvements"].items():
-                    quarterly_data.append({
-                        "Quarter": quarter,
-                        "Count": data["count"],
-                        "Avg Impact": data["avg_impact"]
-                    })
-                
-                if quarterly_data:
-                    quarterly_df = pd.DataFrame(quarterly_data)
-                    
-                    fig_quarterly_perf = px.line(
-                        quarterly_df,
-                        x='Quarter',
-                        y='Count',
-                        title="Quarterly Performance Improvements",
-                        markers=True
-                    )
-                    st.plotly_chart(fig_quarterly_perf, use_container_width=True)
+            # Quarterly performance improvements section removed per user request
             
             # Key optimizations
             if perf_data.get("key_optimizations"):
