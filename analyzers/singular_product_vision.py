@@ -68,19 +68,13 @@ class SingularProductVisionAnalyzer(BaseAnalyzer):
         if token:
             token.check_cancellation()
         
-        # Step 3: Fast API consistency check
-        if progress_callback:
-            progress_callback(current_step, total_steps, "Checking API consistency...")
-        api_consistency = self._ultra_fast_api_analysis()
-        
         # Skip expensive operations for speed
         result = {
             "vision_documentation": vision_docs,
             "feature_architecture": feature_analysis,
-            "api_consistency": api_consistency,
             "development_focus": {},  # Skip for speed
             "vision_coherence_score": self._calculate_fast_vision_score(
-                vision_docs, feature_analysis, api_consistency
+                vision_docs, feature_analysis
             ),
             "total_features_identified": len(feature_analysis.get("features", [])),
             "documentation_coverage": len(vision_docs.get("vision_statements", []))
@@ -208,93 +202,13 @@ class SingularProductVisionAnalyzer(BaseAnalyzer):
         
         return feature_analysis
     
-    def _ultra_fast_api_analysis(self) -> Dict[str, Any]:
-        """Ultra-fast API consistency analysis with aggressive limits"""
-        
-        api_analysis = {
-            "endpoints": [],
-            "naming_patterns": {},
-            "response_formats": [],
-            "consistency_score": 0.0
-        }
-        
-        # Limit to 8 API-related files for ultra-fast analysis
-        api_files = []
-        api_patterns = ["**/*api*", "**/*controller*", "**/*route*"]
-        
-        for pattern in api_patterns:
-            files = self.find_files_by_pattern(pattern)
-            api_files.extend(files[:3])  # Max 3 files per pattern
-            if len(api_files) >= 8:
-                break
-        
-        endpoints = []
-        naming_conventions = defaultdict(int)
-        
-        for api_file in api_files[:8]:
-            content = self.read_file_content(api_file)
-            if not content:
-                continue
-            
-            # Use pre-compiled patterns for ultra-fast endpoint extraction
-            # Generic endpoints
-            for match in self._PATTERNS['api_endpoints'].finditer(content):
-                endpoint = match.group(1)
-                if endpoint and len(endpoint) > 1:
-                    endpoints.append("/" + endpoint)
-                    if len(endpoints) >= 5:  # Limit per file for speed
-                        break
-            
-            # Spring Boot endpoints
-            for match in self._PATTERNS['spring_mapping'].finditer(content):
-                endpoint = match.group(1)
-                if endpoint and len(endpoint) > 1:
-                    endpoints.append("/" + endpoint)
-                    if len(endpoints) >= 8:  # Total limit for speed
-                        break
-            
-            # Express.js endpoints
-            for match in self._PATTERNS['express_routes'].finditer(content):
-                endpoint = match.group(2)
-                if endpoint and len(endpoint) > 1:
-                    endpoints.append("/" + endpoint)
-                    if len(endpoints) >= 10:  # Total limit for speed
-                        break
-            
-            if len(endpoints) >= 10:  # Stop early for speed
-                break
-        
-        # Quick naming pattern analysis
-        for endpoint in endpoints:
-            parts = endpoint.split("/")
-            for part in parts:
-                if part and not part.startswith("{"):
-                    if self._PATTERNS['snake_case'].search(part):
-                        naming_conventions["snake_case"] += 1
-                    elif self._PATTERNS['kebab_case'].search(part):
-                        naming_conventions["kebab_case"] += 1
-                    elif part.islower():
-                        naming_conventions["lowercase"] += 1
-        
-        api_analysis["endpoints"] = list(set(endpoints))  # Remove duplicates
-        api_analysis["naming_patterns"] = dict(naming_conventions)
-        
-        # Quick consistency score
-        if naming_conventions:
-            max_count = max(naming_conventions.values())
-            total_count = sum(naming_conventions.values())
-            api_analysis["consistency_score"] = max_count / total_count if total_count > 0 else 0.0
-        
-        return api_analysis
-    
-    def _calculate_fast_vision_score(self, vision_docs: Dict, feature_analysis: Dict, 
-                                   api_consistency: Dict) -> Dict[str, float]:
+    def _calculate_fast_vision_score(self, vision_docs: Dict, feature_analysis: Dict) -> Dict[str, float]:
         """Calculate fast vision coherence score with minimal processing"""
         
         scores = {
             "documentation_score": 0.0,
             "architecture_score": 0.0,
-            "api_consistency_score": 0.0,
+            "api_consistency_score": 0.0,  # Set to 0 since API consistency moved
             "development_focus_score": 0.5,  # Default value for speed
             "overall_score": 0.0
         }
@@ -308,14 +222,10 @@ class SingularProductVisionAnalyzer(BaseAnalyzer):
             avg_coverage = sum(f["coverage_score"] for f in feature_analysis["features"]) / len(feature_analysis["features"])
             scores["architecture_score"] = avg_coverage
         
-        # API consistency score (0-1)
-        scores["api_consistency_score"] = api_consistency.get("consistency_score", 0.0)
-        
-        # Overall score - simplified calculation
+        # Overall score - simplified calculation (without API consistency)
         scores["overall_score"] = (
-            scores["documentation_score"] * 0.4 +
-            scores["architecture_score"] * 0.4 +
-            scores["api_consistency_score"] * 0.2
+            scores["documentation_score"] * 0.5 +
+            scores["architecture_score"] * 0.5
         )
         
         return scores
@@ -816,16 +726,13 @@ class SingularProductVisionAnalyzer(BaseAnalyzer):
             return
         
         # Overview metrics
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("Vision Coherence Score", f"{analysis['vision_coherence_score']['overall_score']:.2f}")
         with col2:
             st.metric("Features Identified", analysis["total_features_identified"])
         with col3:
             st.metric("Documentation Coverage", analysis["documentation_coverage"])
-        with col4:
-            api_score = analysis['vision_coherence_score']['api_consistency_score']
-            st.metric("API Consistency", f"{api_score:.2f}")
         
         # Vision coherence breakdown
         st.subheader("📊 Vision Coherence Breakdown")
@@ -995,39 +902,6 @@ class SingularProductVisionAnalyzer(BaseAnalyzer):
                 st.plotly_chart(fig_commit_keywords, use_container_width=True)
         else:
             st.info("No commit history available for development focus analysis")
-        
-        # API consistency analysis
-        st.subheader("🔌 API Consistency Analysis")
-        
-        api_analysis = analysis["api_consistency"]
-        
-        if api_analysis["endpoints"]:
-            st.write(f"**Found {len(api_analysis['endpoints'])} API endpoints**")
-            
-            if api_analysis["naming_patterns"]:
-                # API naming patterns
-                pattern_df = pd.DataFrame([
-                    {"Pattern": k, "Count": v}
-                    for k, v in sorted(api_analysis["naming_patterns"].items(), key=lambda x: x[1], reverse=True)
-                ])
-                
-                fig_patterns = px.pie(
-                    pattern_df.head(10),
-                    values="Count",
-                    names="Pattern",
-                    title="API Naming Patterns Distribution"
-                )
-                st.plotly_chart(fig_patterns, use_container_width=True)
-            
-            # Show sample endpoints
-            with st.expander("📋 Sample API Endpoints"):
-                sample_endpoints = api_analysis["endpoints"][:20]
-                for endpoint in sample_endpoints:
-                    st.code(endpoint)
-                if len(api_analysis["endpoints"]) > 20:
-                    st.write(f"... and {len(api_analysis['endpoints']) - 20} more endpoints")
-        else:
-            st.info("No API endpoints detected in the codebase")
         
         # Add save options
         self.add_save_options("singular_product_vision", analysis)

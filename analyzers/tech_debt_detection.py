@@ -89,19 +89,9 @@ class TechDebtDetectionAnalyzer(BaseAnalyzer):
             
             # Add new enhanced features
             if progress_callback:
-                progress_callback(current_step, total_steps, "Analyzing test coverage gaps...")
-            
-            test_coverage_gaps = self._analyze_test_coverage_gaps(token)
-            
-            if progress_callback:
                 progress_callback(current_step, total_steps, "Detecting framework inconsistencies...")
             
             framework_inconsistencies = self._analyze_framework_inconsistencies(token)
-            
-            if progress_callback:
-                progress_callback(current_step, total_steps, "Enhanced code duplication analysis...")
-                
-            enhanced_duplication = self._analyze_code_duplication_enhanced(token)
             
             result = {
                 "code_smells": code_smells,
@@ -111,9 +101,7 @@ class TechDebtDetectionAnalyzer(BaseAnalyzer):
                 "duplication_analysis": {"duplicate_blocks": [], "duplication_score": 0},  # Skip for speed
                 "architectural_debt": {"circular_dependencies": [], "god_classes": []},  # Skip for speed
                 "performance_issues": {"performance_antipatterns": []},  # Skip for speed
-                "test_coverage_gaps": test_coverage_gaps,  # New feature
                 "framework_inconsistencies": framework_inconsistencies,  # New feature
-                "enhanced_code_duplication": enhanced_duplication,  # New feature
                 "debt_summary": self._generate_debt_summary_ultra_fast(
                     code_smells, complexity_metrics, todo_analysis, deprecated_code
                 )
@@ -533,194 +521,6 @@ class TechDebtDetectionAnalyzer(BaseAnalyzer):
                 })
         
         return deprecated
-    
-    def _analyze_test_coverage_gaps(self, token=None) -> Dict[str, Any]:
-        """Analyze test coverage gaps and identify risk areas"""
-        
-        coverage_analysis = {
-            "uncovered_files": [],
-            "high_risk_files": [],
-            "coverage_summary": {},
-            "risk_categories": {}
-        }
-        
-        # Get all source files
-        source_files = self.get_file_list(['.py', '.js', '.ts', '.java', '.cpp'])[:25]  # Limit for performance
-        test_files = self.get_file_list(['test_*.py', '*_test.py', '*.test.js', '*.spec.js', '*Test.java'])
-        
-        # Extract test file patterns for matching
-        test_patterns = set()
-        for test_file in test_files:
-            stem = test_file.stem.lower()
-            # Extract the core name from test file
-            if stem.startswith('test_'):
-                test_patterns.add(stem[5:])
-            elif stem.endswith('_test'):
-                test_patterns.add(stem[:-5])
-            elif stem.endswith('.test'):
-                test_patterns.add(stem[:-5])
-            elif stem.endswith('.spec'):
-                test_patterns.add(stem[:-5])
-            elif stem.endswith('test'):
-                test_patterns.add(stem[:-4])
-        
-        total_files = 0
-        uncovered_count = 0
-        high_risk_count = 0
-        
-        for file_path in source_files:
-            if token:
-                token.check_cancellation()
-            
-            # Skip test files themselves
-            if any(test_keyword in str(file_path).lower() for test_keyword in ['test', 'spec']):
-                continue
-            
-            total_files += 1
-            relative_path = str(file_path.relative_to(self.repo_path))
-            file_stem = file_path.stem.lower()
-            
-            # Check if file has corresponding tests
-            has_test = any(pattern in file_stem or file_stem in pattern for pattern in test_patterns)
-            
-            if not has_test:
-                uncovered_count += 1
-                
-                # Calculate risk level based on file characteristics
-                risk_score = self._calculate_file_risk_score(file_path, relative_path)
-                
-                file_info = {
-                    "file": relative_path,
-                    "risk_score": risk_score,
-                    "risk_level": self._get_risk_level(risk_score),
-                    "file_type": self._get_file_type(relative_path),
-                    "reasons": self._get_risk_reasons(file_path, relative_path)
-                }
-                
-                coverage_analysis["uncovered_files"].append(file_info)
-                
-                if risk_score >= 70:  # High risk threshold
-                    coverage_analysis["high_risk_files"].append(file_info)
-                    high_risk_count += 1
-        
-        # Calculate coverage statistics
-        coverage_percentage = ((total_files - uncovered_count) / max(total_files, 1)) * 100
-        
-        coverage_analysis["coverage_summary"] = {
-            "total_source_files": total_files,
-            "files_with_tests": total_files - uncovered_count,
-            "files_without_tests": uncovered_count,
-            "coverage_percentage": round(coverage_percentage, 1),
-            "high_risk_uncovered": high_risk_count
-        }
-        
-        # Categorize by risk
-        risk_categories = {"critical": 0, "high": 0, "medium": 0, "low": 0}
-        for file_info in coverage_analysis["uncovered_files"]:
-            risk_level = file_info["risk_level"]
-            risk_categories[risk_level] = risk_categories.get(risk_level, 0) + 1
-        
-        coverage_analysis["risk_categories"] = risk_categories
-        
-        return coverage_analysis
-    
-    def _calculate_file_risk_score(self, file_path: Path, relative_path: str) -> int:
-        """Calculate risk score for a file based on various factors"""
-        
-        risk_score = 30  # Base risk
-        
-        # File type importance
-        if any(keyword in relative_path.lower() for keyword in ['main', 'index', 'app']):
-            risk_score += 40  # Entry points are critical
-        elif any(keyword in relative_path.lower() for keyword in ['api', 'endpoint', 'controller']):
-            risk_score += 35  # API files are high risk
-        elif any(keyword in relative_path.lower() for keyword in ['core', 'service', 'business']):
-            risk_score += 30  # Core business logic
-        elif any(keyword in relative_path.lower() for keyword in ['model', 'data', 'db']):
-            risk_score += 25  # Data layer
-        elif any(keyword in relative_path.lower() for keyword in ['util', 'helper', 'common']):
-            risk_score += 15  # Utilities
-        elif any(keyword in relative_path.lower() for keyword in ['config', 'settings']):
-            risk_score += 20  # Configuration files
-        
-        # File size complexity indicator
-        content = self.read_file_content(file_path)
-        if content:
-            lines = len(content.split('\n'))
-            if lines > 200:
-                risk_score += 20
-            elif lines > 100:
-                risk_score += 10
-            
-            # Function/class count as complexity indicator
-            if file_path.suffix == '.py':
-                class_count = len(re.findall(r'class\s+\w+', content))
-                func_count = len(re.findall(r'def\s+\w+', content))
-                risk_score += min((class_count * 5) + (func_count * 2), 30)
-            elif file_path.suffix in ['.js', '.ts']:
-                func_count = len(re.findall(r'function\s+\w+|const\s+\w+\s*=.*=>', content))
-                risk_score += min(func_count * 3, 25)
-        
-        return min(risk_score, 100)
-    
-    def _get_risk_level(self, risk_score: int) -> str:
-        """Get risk level based on score"""
-        if risk_score >= 80:
-            return "critical"
-        elif risk_score >= 60:
-            return "high"
-        elif risk_score >= 40:
-            return "medium"
-        else:
-            return "low"
-    
-    def _get_file_type(self, relative_path: str) -> str:
-        """Determine file type category"""
-        path_lower = relative_path.lower()
-        
-        if any(keyword in path_lower for keyword in ['main', 'index', 'app']):
-            return "Entry Point"
-        elif any(keyword in path_lower for keyword in ['api', 'endpoint', 'controller']):
-            return "API/Controller"
-        elif any(keyword in path_lower for keyword in ['core', 'service', 'business']):
-            return "Business Logic"
-        elif any(keyword in path_lower for keyword in ['model', 'data', 'db']):
-            return "Data Layer"
-        elif any(keyword in path_lower for keyword in ['util', 'helper', 'common']):
-            return "Utility"
-        elif any(keyword in path_lower for keyword in ['config', 'settings']):
-            return "Configuration"
-        else:
-            return "General"
-    
-    def _get_risk_reasons(self, file_path: Path, relative_path: str) -> List[str]:
-        """Get reasons why file is considered risky"""
-        reasons = []
-        
-        path_lower = relative_path.lower()
-        
-        if any(keyword in path_lower for keyword in ['main', 'index', 'app']):
-            reasons.append("Entry point file")
-        if any(keyword in path_lower for keyword in ['api', 'endpoint']):
-            reasons.append("API endpoint")
-        if any(keyword in path_lower for keyword in ['core', 'business']):
-            reasons.append("Core business logic")
-        
-        content = self.read_file_content(file_path)
-        if content:
-            lines = len(content.split('\n'))
-            if lines > 200:
-                reasons.append(f"Large file ({lines} lines)")
-            
-            if file_path.suffix == '.py':
-                class_count = len(re.findall(r'class\s+\w+', content))
-                if class_count > 3:
-                    reasons.append(f"Multiple classes ({class_count})")
-        
-        if not reasons:
-            reasons.append("Untested source file")
-        
-        return reasons
     
     def _analyze_framework_inconsistencies(self, token=None) -> Dict[str, Any]:
         """Analyze framework and approach inconsistencies across the codebase"""
@@ -1237,74 +1037,6 @@ class TechDebtDetectionAnalyzer(BaseAnalyzer):
         else:
             st.success("No high priority items found")
 
-        # NEW FEATURE 1: Test Coverage Gaps
-        st.subheader("🧪 Test Coverage Risk Assessment")
-        
-        test_coverage = analysis.get("test_coverage_gaps", {})
-        coverage_summary = test_coverage.get("coverage_summary", {})
-        
-        if coverage_summary:
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("Coverage %", f"{coverage_summary.get('coverage_percentage', 0)}%")
-            
-            with col2:
-                st.metric("Files Without Tests", coverage_summary.get('files_without_tests', 0))
-            
-            with col3:
-                st.metric("High Risk Files", coverage_summary.get('high_risk_uncovered', 0))
-            
-            with col4:
-                st.metric("Total Source Files", coverage_summary.get('total_source_files', 0))
-            
-            # Risk Categories Chart
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                risk_categories = test_coverage.get("risk_categories", {})
-                if any(risk_categories.values()):
-                    fig = px.pie(
-                        values=list(risk_categories.values()),
-                        names=[f"{k.title()} Risk" for k in risk_categories.keys()],
-                        title="Risk Distribution of Untested Files",
-                        color_discrete_map={
-                            'Critical Risk': '#ff4444',
-                            'High Risk': '#ff8800', 
-                            'Medium Risk': '#ffaa00',
-                            'Low Risk': '#44aa44'
-                        }
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-            
-            with col2:
-                st.write("**🔴 High Risk Untested Files**")
-                high_risk_files = test_coverage.get("high_risk_files", [])[:8]
-                if high_risk_files:
-                    for file_info in high_risk_files:
-                        risk_icon = "🔴" if file_info["risk_level"] == "critical" else "🟠"
-                        st.write(f"{risk_icon} **{file_info['file']}** ({file_info['file_type']})")
-                        st.write(f"   Risk Score: {file_info['risk_score']}/100")
-                        st.write(f"   Reasons: {', '.join(file_info['reasons'][:2])}")
-                        st.write("")
-                else:
-                    st.success("✅ No high-risk untested files detected")
-            
-            # Detailed Test Coverage Table
-            with st.expander("📋 Detailed Coverage Analysis", expanded=False):
-                uncovered_files = test_coverage.get("uncovered_files", [])
-                if uncovered_files:
-                    df = pd.DataFrame(uncovered_files)
-                    # Add risk level colors
-                    def color_risk_level(val):
-                        colors = {'critical': '#ff4444', 'high': '#ff8800', 'medium': '#ffaa00', 'low': '#44aa44'}
-                        return f'background-color: {colors.get(val, "#ffffff")}'
-                    
-                    styled_df = df.style.applymap(color_risk_level, subset=['risk_level'])
-                    st.dataframe(styled_df, use_container_width=True)
-                else:
-                    st.success("🎉 All source files have corresponding tests!")
-
         # NEW FEATURE 2: Framework Inconsistencies
         st.subheader("⚖️ Framework Inconsistencies")
         
@@ -1363,89 +1095,6 @@ class TechDebtDetectionAnalyzer(BaseAnalyzer):
         else:
             st.success("✅ No framework inconsistencies detected - codebase uses consistent approaches")
 
-        # NEW FEATURE 3: Enhanced Code Duplication
-        st.subheader("🔍 Code Duplication Analysis")
-        
-        enhanced_duplication = analysis.get("enhanced_code_duplication", {})
-        duplication_summary = enhanced_duplication.get("duplication_summary", {})
-        
-        if duplication_summary:
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("Exact Duplicates", duplication_summary.get("exact_duplicates", 0))
-            
-            with col2:
-                st.metric("Similar Functions", duplication_summary.get("similar_functions", 0))
-            
-            with col3:
-                st.metric("Structural Duplicates", duplication_summary.get("structural_duplicates", 0))
-            
-            with col4:
-                st.metric("Consolidation Opportunities", duplication_summary.get("total_opportunities", 0))
-            
-            # Consolidation Opportunities
-            opportunities = enhanced_duplication.get("consolidation_opportunities", [])
-            if opportunities:
-                st.write("**💡 Consolidation Opportunities**")
-                
-                for opportunity in opportunities[:8]:
-                    priority_icon = "🔴" if opportunity["priority"] == "high" else "🟡"
-                    effort_icon = "🟢" if opportunity["effort"] == "low" else "🟡" if opportunity["effort"] == "medium" else "🔴"
-                    
-                    st.write(f"{priority_icon} **{opportunity['type']}** {effort_icon}")
-                    st.write(f"   {opportunity['description']}")
-                    st.write(f"   Priority: {opportunity['priority'].title()} | Effort: {opportunity['effort'].title()}")
-                    st.write("")
-            
-            # Detailed Duplication Tables
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.write("**🎯 Exact Duplicates**")
-                exact_duplicates = enhanced_duplication.get("exact_duplicates", [])[:5]
-                if exact_duplicates:
-                    for dup in exact_duplicates:
-                        consolidation_icon = "🔴" if dup["consolidation_potential"] == "high" else "🟡"
-                        st.write(f"{consolidation_icon} **{dup['file']}**")
-                        st.write(f"   `{dup['content']}`")
-                        st.write(f"   Appears {dup['occurrences']} times | Lines: {', '.join(map(str, dup['lines'][:3]))}")
-                        st.write("")
-                else:
-                    st.success("✅ No exact duplicates found")
-            
-            with col2:
-                st.write("**🔄 Similar Functions**") 
-                similar_functions = enhanced_duplication.get("similar_functions", [])[:5]
-                if similar_functions:
-                    for func in similar_functions:
-                        st.write(f"📋 **{func['function_name']}()**")
-                        st.write(f"   Found in {func['occurrences']} files")
-                        st.write(f"   Files: {', '.join(func['files'][:3])}")
-                        if len(func['files']) > 3:
-                            st.write(f"   ...and {len(func['files']) - 3} more files")
-                        st.write("")
-                else:
-                    st.success("✅ No similar functions across files")
-            
-            # Duplication Categories Explanation
-            with st.expander("ℹ️ Duplication Categories Explained", expanded=False):
-                st.write("""
-                **🎯 Exact Duplicates**: Identical lines of code appearing multiple times
-                - **High consolidation potential**: Extract to constants or methods
-                - **Medium consolidation potential**: Consider refactoring if appropriate
-                
-                **🔄 Similar Functions**: Functions with same name across different files  
-                - May indicate opportunity for shared utilities
-                - Consider creating common library or base class
-                
-                **🏗️ Structural Duplicates**: Code with similar structure but different content
-                - Look for patterns that can be abstracted
-                - Consider template methods or strategy patterns
-                """)
-        else:
-            st.info("No duplication analysis data available")
-        
         # Display AI insights from parallel analysis if available
         self.display_parallel_ai_insights("tech_debt_detection")
         

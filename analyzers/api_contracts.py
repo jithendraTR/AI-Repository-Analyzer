@@ -107,6 +107,12 @@ class APIContractAnalyzer(BaseAnalyzer):
         if progress_callback:
             progress_callback(current_step, total_steps, "Analyzing event systems...")
         event_system = self._analyze_event_system()
+        current_step += 1
+        
+        # Step 8: API Consistency Analysis
+        if progress_callback:
+            progress_callback(current_step, total_steps, "Analyzing API consistency...")
+        api_consistency = self._ultra_fast_api_analysis()
         
         # Skip expensive operations for speed
         result = {
@@ -117,6 +123,7 @@ class APIContractAnalyzer(BaseAnalyzer):
             "config_contracts": [],  # Skip for speed
             "messaging_contracts": [],  # Skip for speed  
             "openapi_specs": [],  # Skip for speed
+            "api_consistency": api_consistency,  # NEW: API Consistency Analysis
             "summary": self._generate_fast_summary(rest_apis, external_integrations, database_schemas),
             # New Integration Complexity Scoring features
             "integration_complexity_scoring": {
@@ -802,6 +809,92 @@ class APIContractAnalyzer(BaseAnalyzer):
         event_system['dependency_chains'] = dependency_chains
         
         return event_system
+    
+    def _ultra_fast_api_analysis(self) -> Dict[str, Any]:
+        """Ultra-fast API consistency analysis with aggressive limits"""
+        
+        api_analysis = {
+            "endpoints": [],
+            "naming_patterns": {},
+            "response_formats": [],
+            "consistency_score": 0.0
+        }
+        
+        # Limit to 8 API-related files for ultra-fast analysis
+        api_files = []
+        api_patterns = ["**/*api*", "**/*controller*", "**/*route*"]
+        
+        for pattern in api_patterns:
+            files = self.find_files_by_pattern(pattern)
+            api_files.extend(files[:3])  # Max 3 files per pattern
+            if len(api_files) >= 8:
+                break
+        
+        endpoints = []
+        naming_conventions = defaultdict(int)
+        
+        # Pre-compiled patterns for ultra-fast endpoint extraction
+        api_endpoints_pattern = re.compile(r'["\']/([\w\-/{}]+)["\']', re.IGNORECASE)
+        spring_mapping_pattern = re.compile(r'@\w+Mapping\(["\']/([\w\-/{}]+)["\']', re.IGNORECASE)
+        express_routes_pattern = re.compile(r'app\.(get|post|put|delete)\(["\']/([\w\-/{}]+)["\']', re.IGNORECASE)
+        snake_case_pattern = re.compile(r'_')
+        kebab_case_pattern = re.compile(r'-')
+        
+        for api_file in api_files[:8]:
+            content = self.read_file_content(api_file)
+            if not content:
+                continue
+            
+            # Use pre-compiled patterns for ultra-fast endpoint extraction
+            # Generic endpoints
+            for match in api_endpoints_pattern.finditer(content):
+                endpoint = match.group(1)
+                if endpoint and len(endpoint) > 1:
+                    endpoints.append("/" + endpoint)
+                    if len(endpoints) >= 5:  # Limit per file for speed
+                        break
+            
+            # Spring Boot endpoints
+            for match in spring_mapping_pattern.finditer(content):
+                endpoint = match.group(1)
+                if endpoint and len(endpoint) > 1:
+                    endpoints.append("/" + endpoint)
+                    if len(endpoints) >= 8:  # Total limit for speed
+                        break
+            
+            # Express.js endpoints
+            for match in express_routes_pattern.finditer(content):
+                endpoint = match.group(2)
+                if endpoint and len(endpoint) > 1:
+                    endpoints.append("/" + endpoint)
+                    if len(endpoints) >= 10:  # Total limit for speed
+                        break
+            
+            if len(endpoints) >= 10:  # Stop early for speed
+                break
+        
+        # Quick naming pattern analysis
+        for endpoint in endpoints:
+            parts = endpoint.split("/")
+            for part in parts:
+                if part and not part.startswith("{"):
+                    if snake_case_pattern.search(part):
+                        naming_conventions["snake_case"] += 1
+                    elif kebab_case_pattern.search(part):
+                        naming_conventions["kebab_case"] += 1
+                    elif part.islower():
+                        naming_conventions["lowercase"] += 1
+        
+        api_analysis["endpoints"] = list(set(endpoints))  # Remove duplicates
+        api_analysis["naming_patterns"] = dict(naming_conventions)
+        
+        # Quick consistency score
+        if naming_conventions:
+            max_count = max(naming_conventions.values())
+            total_count = sum(naming_conventions.values())
+            api_analysis["consistency_score"] = max_count / total_count if total_count > 0 else 0.0
+        
+        return api_analysis
     
     def _generate_fast_summary(self, rest_apis: Dict[str, List[Dict]], external_integrations: List[Dict], 
                               database_schemas: Dict[str, List[Dict]]) -> Dict[str, Any]:
@@ -1578,6 +1671,58 @@ class APIContractAnalyzer(BaseAnalyzer):
         else:
             st.info("No OpenAPI specifications found")
         
+        # API Consistency Analysis
+        st.subheader("🔌 API Consistency Analysis")
+        st.markdown("Enhanced analysis of API naming conventions and consistency patterns")
+        
+        api_consistency = analysis.get("api_consistency", {})
+        
+        if api_consistency.get("endpoints"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.metric("Total Endpoints Found", len(api_consistency["endpoints"]))
+                st.metric("Consistency Score", f"{api_consistency.get('consistency_score', 0):.2f}")
+            
+            with col2:
+                # API naming patterns distribution
+                naming_patterns = api_consistency.get("naming_patterns", {})
+                if naming_patterns:
+                    fig_naming = px.pie(
+                        values=list(naming_patterns.values()),
+                        names=[f"{k.replace('_', ' ').title()}" for k in naming_patterns.keys()],
+                        title="API Naming Conventions Distribution",
+                        color_discrete_map={
+                            'Snake Case': '#2E86AB',
+                            'Kebab Case': '#A23B72', 
+                            'Lowercase': '#F18F01'
+                        }
+                    )
+                    st.plotly_chart(fig_naming, use_container_width=True)
+            
+            # Sample endpoints
+            with st.expander("📋 Sample API Endpoints"):
+                sample_endpoints = api_consistency["endpoints"][:15]
+                for i, endpoint in enumerate(sample_endpoints, 1):
+                    st.code(f"{i}. {endpoint}")
+                if len(api_consistency["endpoints"]) > 15:
+                    st.write(f"... and {len(api_consistency['endpoints']) - 15} more endpoints")
+            
+            # Consistency recommendations
+            if api_consistency.get("consistency_score", 0) < 0.8:
+                st.warning("🔍 **API Consistency Recommendations:**")
+                recommendations = [
+                    "📝 **Standardize Naming**: Choose one consistent naming convention (snake_case, kebab-case, or lowercase)",
+                    "📚 **API Guidelines**: Create and enforce API naming guidelines across the team",
+                    "🔍 **Review Process**: Implement API design reviews to catch inconsistencies early",
+                    "🛠️ **Tooling**: Consider using API linting tools to automatically check consistency"
+                ]
+                for rec in recommendations:
+                    st.markdown(f"- {rec}")
+            else:
+                st.success("✅ API endpoints follow consistent naming patterns")
+        else:
+            st.info("No API endpoints found for consistency analysis")
         
         # Integration Complexity Scoring Features
         st.subheader("🎯 Integration Complexity Scoring")
