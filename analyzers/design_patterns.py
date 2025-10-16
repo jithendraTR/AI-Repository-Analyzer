@@ -1114,3 +1114,7 @@ class DesignPatternAnalyzer(BaseAnalyzer):
                         st.write(f"• {issue['file']}: {issue['count']} issues")
         else:
             st.success("No anti-patterns detected")
+        
+        # Add save options
+        st.markdown("---")
+        self.add_save_options("design_patterns", analysis)
