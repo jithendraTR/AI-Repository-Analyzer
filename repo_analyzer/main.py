@@ -7,8 +7,9 @@ import streamlit as st
 
 # MUST be the first Streamlit command
 st.set_page_config(
-    page_title="AI Codebase Analyzer",
+    page_title="AI Repository Analysis",   
     page_icon="🔍",
+
     layout="wide"
 )
 
@@ -711,8 +712,8 @@ def main():
     # Main app header with summary and dev assistance buttons
     col1, col2 = st.columns([3, 1])
     with col1:
-        st.title("🔍 AI-Powered Codebase Analyzer")
-        st.markdown("Accelerate codebase onboarding and architectural discovery")
+        st.title("🔍 AI-Powered Repository Analysis")
+        st.markdown("Accelerate repository onboarding and architectural discovery")
     
     with col2:
         # Create two columns for the buttons
@@ -1311,7 +1312,7 @@ def main():
     
     # Main content area
     elif not st.session_state.analysis_complete:
-        st.markdown("## 🚀 Welcome to AI Codebase Analyzer")
+        st.markdown("## 🚀 Welcome to AI Repository Analysis")
         
         st.markdown("""
         This tool helps you quickly understand and analyze any Git repository using AI-powered insights.
